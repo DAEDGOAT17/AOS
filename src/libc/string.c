@@ -68,6 +68,14 @@ char* strcat(char* dest, const char* src) {
     return original;
 }
 
+char* strchr(const char* s, int c) {
+    while (*s) {
+        if (*s == (char)c) return (char*)s;
+        s++;
+    }
+    return (*s == (char)c) ? (char*)s : 0;
+}
+
 char* strstr(const char* haystack, const char* needle) {
     if (!*needle) return (char*)haystack;
     while (*haystack) {

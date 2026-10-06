@@ -14,6 +14,8 @@ typedef struct {
 
 // AI Core Agent Client
 void ollama_request(const char* ip_str, const char* prompt);
+void ollama_agent_request(const char* ip_str, const char* prompt);
+void ollama_feedback_request(const char* ip_str, const char* feedback);
 void ollama_mock_intercept(void);
 
 extern tcp_socket_t active_sockets[8];

@@ -436,29 +436,52 @@ uint32_t fat32_resolve_path(const char* path) {
 int fat32_open(const char* path, char mode) {
     uint32_t target_cluster = fat32_resolve_path(path);
     uint32_t parent_cluster = 0;
-    
-    // Special handling for write mode if file doesn't exist
-    if (target_cluster == 0 && mode == 'w') {
-        // Need parent to create entry. For now support current dir or simple paths
+    char parent_path[FAT32_MAX_PATH];
+    char filename[FAT32_MAX_FILENAME];
+    const char* target_filename = path;
+
+    // Resolve the parent directory for nested paths first.
+    strcpy(parent_path, path);
+    char* last_slash = NULL;
+    for (int i = 0; parent_path[i]; i++) {
+        if (parent_path[i] == '/') last_slash = &parent_path[i];
+    }
+    if (last_slash) {
+        if (last_slash == parent_path) {
+            parent_cluster = bpb.root_cluster;
+            strcpy(filename, last_slash + 1);
+            target_filename = filename;
+        } else {
+            *last_slash = '\0';
+            parent_cluster = fat32_resolve_path(parent_path);
+            strcpy(filename, last_slash + 1);
+            target_filename = filename;
+        }
+    } else {
         parent_cluster = fat32_cwd_cluster;
         if (path[0] == '/') parent_cluster = bpb.root_cluster;
-        
-        // Find last '/' to separate filename
-        const char* filename = path;
-        for (int i = 0; path[i]; i++) if (path[i] == '/') filename = path + i + 1;
-        
+        strcpy(filename, path);
+        target_filename = filename;
+    }
+    if (parent_cluster == 0) parent_cluster = bpb.root_cluster;
+
+    // Special handling for write mode if file doesn't exist.
+    if (target_cluster == 0 && mode == 'w') {
         target_cluster = find_free_cluster();
         if (!target_cluster) return -1;
         set_next_cluster(target_cluster, FAT32_EOC);
-        
+
         uint8_t zero_buf[512];
         memset(zero_buf, 0, 512);
         uint32_t start_lba = cluster_to_lba(target_cluster);
-        for(int s = 0; s < bpb.sectors_per_cluster; s++) ata_write_sectors(start_lba + s, 1, zero_buf);
+        for (int s = 0; s < bpb.sectors_per_cluster; s++) {
+            ata_write_sectors(start_lba + s, 1, zero_buf);
+        }
 
         if (create_entry(parent_cluster, filename, FAT_ATTR_ARCHIVE, target_cluster, 0) != 0) return -1;
+        target_cluster = fat32_resolve_path(path);
     }
-    
+
     if (target_cluster == 0) return -1;
 
     int fd = -1;
@@ -466,31 +489,21 @@ int fat32_open(const char* path, char mode) {
         if (!open_files[i].valid) { fd = i; break; }
     }
     if (fd == -1) return -1;
-    
+
     open_files[fd].valid = 1;
     open_files[fd].first_cluster = target_cluster;
     open_files[fd].current_cluster = target_cluster;
     open_files[fd].position = 0;
     open_files[fd].cluster_offset = 0;
-    open_files[fd].file_size = 0; // Will be filled below
+    open_files[fd].file_size = 0;
 
-    // Store filename for write-back
-    const char* target_filename = path;
-    for (int i = 0; path[i]; i++) if (path[i] == '/') target_filename = path + i + 1;
-    strncpy(open_files[fd].name, target_filename, FAT32_MAX_FILENAME-1);
-    open_files[fd].name[FAT32_MAX_FILENAME-1] = '\0';
-    
-    // Need to find physical location of entry to update size later
-    parent_cluster = fat32_cwd_cluster;
-    if (path[0] == '/') parent_cluster = bpb.root_cluster;
-    
-    // If path has slashes before filename, parent is different
-    // (Simplification: assume it's in current dir if not root-relative)
-    
+    strncpy(open_files[fd].name, target_filename, FAT32_MAX_FILENAME - 1);
+    open_files[fd].name[FAT32_MAX_FILENAME - 1] = '\0';
+
     uint32_t search_cluster = parent_cluster;
     uint8_t name_8[8], ext_3[3];
     standardize_name(target_filename, name_8, ext_3);
-    
+
     int found = 0;
     while (search_cluster != FAT32_EOC && !found) {
         uint32_t lba = cluster_to_lba(search_cluster);
@@ -502,9 +515,15 @@ int fat32_open(const char* path, char mode) {
                 if (entries[i].name[0] == 0x00) break;
                 if (entries[i].name[0] == 0xE5) continue;
                 if (memcmp(entries[i].name, name_8, 8) == 0 && memcmp(entries[i].ext, ext_3, 3) == 0) {
-                    open_files[fd].file_size = entries[i].file_size;
+                    if (mode == 'w') {
+                        entries[i].file_size = 0;
+                        open_files[fd].file_size = 0;
+                        ata_write_sectors(lba + s, 1, sector_buf);
+                    } else {
+                        open_files[fd].file_size = entries[i].file_size;
+                    }
                     open_files[fd].dir_cluster = search_cluster;
-                    open_files[fd].dir_entry_index = (s * (512/sizeof(fat32_dir_entry_t))) + i;
+                    open_files[fd].dir_entry_index = (s * (512 / sizeof(fat32_dir_entry_t))) + i;
                     found = 1;
                     break;
                 }
@@ -739,28 +758,131 @@ int fat32_unlink(const char* path) {
 }
 
 int fat32_chdir(const char* path) {
-    uint32_t cluster = fat32_resolve_path(path);
-    if (cluster == 0) return -1;
-    
-    // Simple path update logic
-    if (path[0] == '/') {
-        strncpy(fat32_cwd_path, path, FAT32_MAX_PATH-1);
-    } else {
-        // Handle "." and ".." and relative
-        if (strcmp(path, ".") == 0) return 0;
-        if (strcmp(path, "..") == 0) {
-            if (strcmp(fat32_cwd_path, "/") == 0) return 0;
-            // Remove last component
-            char* last = 0;
-            for(int i=0; fat32_cwd_path[i]; i++) if(fat32_cwd_path[i] == '/') last = &fat32_cwd_path[i];
-            if (last == fat32_cwd_path) fat32_cwd_path[1] = '\0';
-            else *last = '\0';
-        } else {
-            if (strcmp(fat32_cwd_path, "/") != 0) strcat(fat32_cwd_path, "/");
-            strcat(fat32_cwd_path, path);
-        }
+    if (!path || path[0] == '\0') return -1;
+    if (strcmp(path, ".") == 0) return 0;
+    if (strcmp(path, "/") == 0) {
+        strcpy(fat32_cwd_path, "/");
+        fat32_cwd_cluster = bpb.root_cluster;
+        return 0;
     }
-    
+
+    char full_path[FAT32_MAX_PATH];
+    if (path[0] == '/') {
+        strcpy(full_path, path);
+    } else {
+        strcpy(full_path, fat32_cwd_path);
+        if (strcmp(full_path, "/") != 0) strcat(full_path, "/");
+        strcat(full_path, path);
+    }
+
+    // Resolve relative parent navigation before checking filesystem entries.
+    char normalized[FAT32_MAX_PATH];
+    normalized[0] = '\0';
+    char temp[FAT32_MAX_PATH];
+    strcpy(temp, full_path);
+    char* part = temp;
+    if (*part == '/') part++;
+
+    while (*part) {
+        char* slash = strchr(part, '/');
+        if (slash) *slash = '\0';
+
+        if (part[0] == '\0' || strcmp(part, ".") == 0) {
+            if (slash) part = slash + 1;
+            else break;
+            continue;
+        }
+
+        if (strcmp(part, "..") == 0) {
+            if (strcmp(normalized, "/") == 0) {
+                if (slash) part = slash + 1;
+                else break;
+                continue;
+            }
+            char* last = NULL;
+            for (int i = 0; normalized[i]; i++) {
+                if (normalized[i] == '/') last = &normalized[i];
+            }
+            if (!last || last == normalized) {
+                strcpy(normalized, "/");
+            } else {
+                *last = '\0';
+            }
+            if (slash) part = slash + 1;
+            else break;
+            continue;
+        }
+
+        if (strcmp(normalized, "/") == 0) {
+            strcpy(normalized, "/");
+            strcat(normalized, part);
+        } else {
+            strcat(normalized, "/");
+            strcat(normalized, part);
+        }
+
+        if (slash) part = slash + 1;
+        else break;
+    }
+
+    if (normalized[0] == '\0') strcpy(normalized, "/");
+
+    uint32_t cluster = fat32_resolve_path(normalized);
+    if (cluster == 0) return -1;
+
+    // Only directories may be entered.
+    uint32_t parent_cluster = bpb.root_cluster;
+    char parent_path[FAT32_MAX_PATH];
+    char final_name[FAT32_MAX_FILENAME];
+    strcpy(parent_path, normalized);
+    char* last_slash = NULL;
+    for (int i = 0; parent_path[i]; i++) {
+        if (parent_path[i] == '/') last_slash = &parent_path[i];
+    }
+    if (last_slash && last_slash != parent_path) {
+        *last_slash = '\0';
+        parent_cluster = fat32_resolve_path(parent_path);
+        strcpy(final_name, last_slash + 1);
+    } else if (strcmp(normalized, "/") == 0) {
+        parent_cluster = bpb.root_cluster;
+        strcpy(final_name, "/");
+    } else {
+        parent_cluster = bpb.root_cluster;
+        strcpy(final_name, normalized + 1);
+    }
+
+    if (strcmp(normalized, "/") == 0) {
+        strcpy(fat32_cwd_path, "/");
+        fat32_cwd_cluster = bpb.root_cluster;
+        return 0;
+    }
+
+    uint32_t search_cluster = parent_cluster;
+    uint8_t name_8[8], ext_3[3];
+    standardize_name(final_name, name_8, ext_3);
+    int found = 0;
+    while (search_cluster != FAT32_EOC && !found) {
+        uint32_t lba = cluster_to_lba(search_cluster);
+        uint8_t sector_buf[512];
+        for (int s = 0; s < bpb.sectors_per_cluster && !found; s++) {
+            ata_read_sectors(lba + s, 1, sector_buf);
+            fat32_dir_entry_t* entries = (fat32_dir_entry_t*)sector_buf;
+            for (size_t i = 0; i < 512 / sizeof(fat32_dir_entry_t); i++) {
+                if (entries[i].name[0] == 0x00) break;
+                if (entries[i].name[0] == 0xE5) continue;
+                if (entries[i].attributes == FAT_ATTR_LFN) continue;
+                if (memcmp(entries[i].name, name_8, 8) == 0 && memcmp(entries[i].ext, ext_3, 3) == 0) {
+                    if (!(entries[i].attributes & FAT_ATTR_DIRECTORY)) return -1;
+                    found = 1;
+                    break;
+                }
+            }
+        }
+        if (!found) search_cluster = get_next_cluster(search_cluster);
+    }
+    if (!found && strcmp(normalized, "/") != 0) return -1;
+
+    strcpy(fat32_cwd_path, normalized);
     fat32_cwd_cluster = cluster;
     return 0;
 }

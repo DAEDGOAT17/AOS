@@ -9,6 +9,8 @@ static volatile uint32_t timer_ticks = 0;
 // Forward declarations for network polling driven from IRQ context.
 // These must be lightweight and re-entrant-safe (no dynamic allocation).
 extern void rtl8169_poll(void);
+extern void e1000_poll(void);
+extern void hda_audio_poll(void);
 extern void sys_check_timeouts(void);
 
 // Initialize the PIT (Programmable Interval Timer)
@@ -75,8 +77,10 @@ void timer_handler() {
     // gives us 50x the margin needed — completely eliminating missed timeouts.
     if (net_ready) {
         rtl8169_poll();
+        e1000_poll();
         sys_check_timeouts();
     }
+    hda_audio_poll();
 
     // Send EOI to interrupt controller
     apic_eoi();

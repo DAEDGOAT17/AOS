@@ -47,6 +47,9 @@ void kmain(uint32_t magic, multiboot_info_t* mbd) {
     
     // Scan for PCI Storage (SSDs)
     pci_scan_storage();
+
+    // Enumerate audio hardware before starting the network stack.
+    pci_scan_multimedia();
     
     // Scan for PCI Network Controllers and Initialize TCP/IP
     pci_scan_network();
@@ -102,11 +105,11 @@ void kmain(uint32_t magic, multiboot_info_t* mbd) {
     clear_screen();
 
     // Large ASCII logo - pure 7-bit ASCII, renders perfectly on any framebuffer
-    print_color_string("  ###     #    ######  ##   ##  ###  #####\n",  MAKE_COLOR(COLOR_LIGHT_CYAN,  COLOR_BLACK));
-    print_color_string("   #     # #   #    #  ##   ##   #  #     \n",  MAKE_COLOR(COLOR_LIGHT_CYAN,  COLOR_BLACK));
-    print_color_string("   #    #####  ######   ## ##    #   ####  \n",  MAKE_COLOR(COLOR_CYAN,         COLOR_BLACK));
-    print_color_string("   #   #     # #    #    ###     #       # \n",  MAKE_COLOR(COLOR_LIGHT_CYAN,  COLOR_BLACK));
-    print_color_string("  ###  #     # #    #     #     ###  #####  \n", MAKE_COLOR(COLOR_LIGHT_CYAN,  COLOR_BLACK));
+    print_color_string("  #####     #    ######  ##   ##  ###  #####\n",  MAKE_COLOR(COLOR_LIGHT_CYAN,  COLOR_BLACK));
+    print_color_string("     #     # #   #    #  ##   ##   #  #     \n",  MAKE_COLOR(COLOR_LIGHT_CYAN,  COLOR_BLACK));
+    print_color_string("     #    #####  ######   ## ##    #   ####  \n",  MAKE_COLOR(COLOR_CYAN,         COLOR_BLACK));
+    print_color_string("  #  #   #     # #    #    ###     #       # \n",  MAKE_COLOR(COLOR_LIGHT_CYAN,  COLOR_BLACK));
+    print_color_string("   ###   #     # #    #     #     ###  #####  \n", MAKE_COLOR(COLOR_LIGHT_CYAN,  COLOR_BLACK));
     print_char('\n');
 
     print_color_string("  +--------------------------------------------------+\n", MAKE_COLOR(COLOR_LIGHT_BLUE, COLOR_BLACK));

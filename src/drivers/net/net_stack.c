@@ -10,6 +10,7 @@
 //      overflowing when the AI sends an unusually long command string.
 
 #include "net_stack.h"
+#include "agent.h"
 #include "screen.h"
 #include "string.h"
 #include "lwip/tcp.h"
@@ -28,57 +29,135 @@ extern void shell_execute(char* cmd);
 
 static char global_prompt[8192];
 static char global_ip_str[32];
+static int agent_loop_active = 0;
+static int agent_action_count = 0;
+#define AGENT_MAX_ACTIONS 4
 
-// ------------------------------------------------------------------
-// Comprehensive system prompt sent to Ollama via the "system" field.
-//
-// Rules for embedding in a C JSON string literal:
-//   \\ → a single backslash in the string → \ in JSON
-//   \n → a real newline in C — WRONG inside a JSON string value!
-//   \\n → the two chars \ and n in the string → \n in JSON (correct)
-//   \" → a literal " in JSON (use only where needed)
-//
-// This macro is concatenated directly inside a JSON string literal so
-// it must never contain a raw " character.
-// ------------------------------------------------------------------
+// Keep model-proposed commands inside a narrow, read-only tool boundary.
 #define SYSTEM_PROMPT                                                           \
-    "You ARE JARVIS, the autonomous execution kernel of Jarvis OS. YOU ARE IN AN AUTOMATED EXECUTION LOOP. " \
-    "Every message is a task. Every task MUST be executed immediately."          \
-    "\\n\\nFILESYSTEM IDENTITY:\\n"                                              \
-    "  - FAT32 RAM disk. Root is '/'. This is the ENTIRE filesystem.\\n"        \
-    "  - The current working directory (CWD) is given to you in every message.\\n"\
-    "\\nRESPONSE FORMAT — NON-NEGOTIABLE:\\n"                                   \
-    "  RULE 1: Wrap EVERY command in <EXEC_CMD:command> — no exceptions.\\n"   \
-    "  RULE 2: ONE command per <EXEC_CMD:> tag. Never chain with && | ;.\\n"   \
-    "  RULE 3: ZERO markdown. ZERO backticks. ZERO text explanations.\\n"      \
-    "  RULE 4: Output ONLY the <EXEC_CMD:command> and absolutely nothing else.\\n" \
-    "\\nAVAILABLE COMMANDS:\\n"                                                   \
-    "  ls [path]           - list files/dirs\\n"                                \
-    "  cd <path>           - change directory\\n"                               \
-    "  cat <file>          - display file contents\\n"                          \
-    "  touch <file>        - create empty file\\n"                              \
-    "  write <file> <text> - write text to a file\\n"                           \
-    "  echo <text>         - print text to screen\\n"                           \
-    "  rm <file>           - delete file\\n"                                    \
-    "  mkdir <dir>         - create directory\\n"                               \
-    "  rmdir <dir>         - remove directory\\n"                               \
-    "  clear               - clear screen\\n"                                   \
-    "  ps                  - list processes\\n"                                 \
-    "  mem                 - memory usage\\n"                                   \
-    "  sysinfo             - full system report\\n"                             \
-    "  cpuid               - CPU identity\\n"                                   \
-    "  arch                - CPU architecture\\n"                               \
-    "  agent_ctx_set <k> <v> - Save context to DB\\n"                           \
-    "  agent_ctx_get <k>     - Retrieve context from DB\\n"                     \
-    "  pci storage         - scan PCI storage\\n"                               \
-    "  pci network         - scan PCI network\\n"                               \
-    "  pci audio           - scan PCI audio\\n"                                 \
-    "  ahci                - scan AHCI controllers\\n"                          \
-    "  ifconfig            - network interface\\n"                              \
-    "  netstat             - network statistics\\n"                             \
-    "  ping <ip>           - ICMP ping\\n"                                      \
-    "  reboot              - restart system\\n"                                 \
-    "  stop                - end task\\n"
+    "You are JARVIS for Jarvis OS. For a prompt marked [AGENT TASK], follow the goal using the tool protocol below. Otherwise answer normally without tools.\\n" \
+    "Agent tools are read-only: ls [path], cat <file>, sysinfo, ps, mem, cpuid, arch.\\n" \
+    "Use at most four successful tools, one per response, formatted exactly as <EXEC_CMD:tool>. Never use shell chaining, writes, deletes, networking, reboot, or other commands.\\n" \
+    "Inspect each actual tool output before deciding the next action. When the goal is satisfied, output <EXEC_CMD:stop>. If it cannot be safely completed, output <EXEC_CMD:stop>; the OS will request review if there is no successful evidence.\\n" \
+    "Do not claim an action succeeded unless its output confirms it."
+
+static int agent_readonly_command(const char* command) {
+    const char* arg = command;
+    while (*arg && *arg != ' ') arg++;
+    int verb_len = (int)(arg - command);
+    char verb[16];
+    if (verb_len <= 0 || verb_len >= (int)sizeof(verb)) return 0;
+    memcpy(verb, command, (size_t)verb_len);
+    verb[verb_len] = '\0';
+
+    if (*arg == ' ') {
+        arg++;
+        if (*arg == '\0' || *arg == ' ') return 0;
+    }
+
+    int takes_path = strcmp(verb, "ls") == 0 || strcmp(verb, "cat") == 0;
+    if (takes_path) {
+        if (strcmp(verb, "cat") == 0 && *arg == '\0') return 0;
+        while (*arg) {
+            char c = *arg++;
+            if (!((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
+                  (c >= '0' && c <= '9') || c == '/' || c == '.' ||
+                  c == '_' || c == '-')) return 0;
+        }
+        return 1;
+    }
+
+    if (*arg != '\0') return 0;
+    return strcmp(verb, "sysinfo") == 0 || strcmp(verb, "ps") == 0 ||
+           strcmp(verb, "mem") == 0 || strcmp(verb, "cpuid") == 0 ||
+           strcmp(verb, "arch") == 0;
+}
+
+static int agent_tool_failed(const char* output) {
+    return !output || output[0] == '\0' ||
+           strstr(output, "not found") != NULL ||
+           strstr(output, "Unknown command") != NULL ||
+           strstr(output, "Usage:") != NULL ||
+           strstr(output, "Failed") != NULL;
+}
+
+static void ollama_handle_agent_command(const char* command) {
+    if (strcmp(command, "stop") == 0 || strcmp(command, "done") == 0) {
+        if (agent_loop_active && agent_action_count > 0) {
+            char summary[] = "Completed after successful read-only actions; output stored in agent DB.";
+            agent_task_result(summary);
+            print_string("\n[JARVIS Agent completed with observed action evidence]\n");
+        } else if (agent_loop_active) {
+            agent_task_failed("Agent stopped without a successful read-only action.");
+            print_string("\n[JARVIS Agent stopped; task needs review]\n");
+        } else {
+            print_string("\n[JARVIS] Tool execution rejected outside agent_task.\n");
+        }
+        agent_loop_active = 0;
+        return;
+    }
+
+    if (!agent_loop_active || !agent_readonly_command(command)) {
+        print_string("\n[JARVIS] Rejected unsafe or out-of-task tool command.\n");
+        if (agent_loop_active) {
+            agent_task_failed("Agent requested a command outside the read-only tool allowlist.");
+            agent_loop_active = 0;
+        }
+        return;
+    }
+
+    if (agent_action_count >= AGENT_MAX_ACTIONS) {
+        agent_task_failed("Agent exceeded the four-action limit.");
+        agent_loop_active = 0;
+        print_string("\n[JARVIS] Action limit reached; task needs review.\n");
+        return;
+    }
+
+    set_text_color(MAKE_COLOR(COLOR_LIGHT_CYAN, COLOR_BLACK));
+    print_string("\n[JARVIS Agent >> ");
+    print_string(command);
+    print_string("]\n");
+    reset_text_color();
+
+    extern void screen_start_capture(void);
+    extern void screen_stop_capture(void);
+    extern char* screen_get_capture(void);
+
+    screen_start_capture();
+    char command_buffer[256];
+    strcpy(command_buffer, command);
+    shell_execute(command_buffer);
+    screen_stop_capture();
+
+    char* output = screen_get_capture();
+    if (agent_tool_failed(output)) {
+        agent_task_failed("A read-only tool did not produce successful output.");
+        agent_loop_active = 0;
+        print_string("\n[JARVIS] Tool failed; task needs review.\n");
+        return;
+    }
+
+    agent_task_observation(command, output);
+    agent_action_count++;
+
+    static char feedback_prompt[2048];
+    strcpy(feedback_prompt, "[AGENT EXEC RESULT] Tool: ");
+    strcat(feedback_prompt, command);
+    strcat(feedback_prompt, "\\nObserved output:\\n");
+    int prompt_len = strlen(feedback_prompt);
+    int output_len = strlen(output);
+    if (output_len > (int)sizeof(feedback_prompt) - prompt_len - 96)
+        output_len = (int)sizeof(feedback_prompt) - prompt_len - 96;
+    memcpy(feedback_prompt + prompt_len, output, (size_t)output_len);
+    feedback_prompt[prompt_len + output_len] = '\0';
+    if (agent_action_count >= AGENT_MAX_ACTIONS)
+        strcat(feedback_prompt, "\\nAction budget exhausted. Use <EXEC_CMD:stop> now.");
+    else
+        strcat(feedback_prompt, "\\nChoose one next read-only action, or use <EXEC_CMD:stop> if done.");
+
+    print_string("\n[Network: Sending observed result to agent... ]\n");
+    ollama_feedback_request(global_ip_str, feedback_prompt);
+}
 
 // ------------------------------------------------------------------
 // itoa — int to ASCII, no libc
@@ -164,7 +243,13 @@ void ollama_parse_json(char* payload) {
     if (hdr_end) body = hdr_end + 4;
 
     char* resp = strstr(body, "\"response\":\"");
-    if (!resp) return; // Malformed or error response
+    if (!resp) {
+        if (agent_loop_active) {
+            agent_task_failed("AI response did not contain a valid response field.");
+            agent_loop_active = 0;
+        }
+        return;
+    }
     resp += 12;        // Skip past  "response":"
 
     set_text_color(MAKE_COLOR(COLOR_LIGHT_MAGENTA, COLOR_BLACK));
@@ -202,18 +287,12 @@ void ollama_parse_json(char* payload) {
                 }
             } else if (decoded == '>' && catching) {
                 catching = 0;
-                // Trim trailing spaces from captured command
                 while (intercept_idx > 0 && intercept_cmd[intercept_idx-1] == ' ')
                     intercept_idx--;
                 intercept_cmd[intercept_idx] = '\0';
-                intercept_idx = 0;
-                set_text_color(MAKE_COLOR(COLOR_LIGHT_CYAN, COLOR_BLACK));
-                print_string("\n[JARVIS Agent >> ");
-                print_string(intercept_cmd);
-                print_string("]\n");
+                ollama_handle_agent_command(intercept_cmd);
                 reset_text_color();
-                shell_execute(intercept_cmd);
-                set_text_color(MAKE_COLOR(COLOR_LIGHT_MAGENTA, COLOR_BLACK));
+                return;
             } else {
                 if (catching && intercept_idx < ICMD_MAX)
                     intercept_cmd[intercept_idx++] = decoded;
@@ -275,61 +354,12 @@ void ollama_parse_json(char* payload) {
         // ── Close tag while catching ─────────────────────────────────────
         if (catching && *resp == '>') {
             catching = 0;
-            // Trim trailing spaces before executing
             while (intercept_idx > 0 && intercept_cmd[intercept_idx-1] == ' ')
                 intercept_idx--;
             intercept_cmd[intercept_idx] = '\0';
-            intercept_idx = 0;
-
-            if (strcmp(intercept_cmd, "stop") == 0 || strcmp(intercept_cmd, "done") == 0) {
-                set_text_color(MAKE_COLOR(COLOR_LIGHT_GREEN, COLOR_BLACK));
-                print_string("\n[JARVIS Agent Sequence Completed]\n");
-                reset_text_color();
-                break; // Stop loop, do not issue feedback request
-            }
-
-            set_text_color(MAKE_COLOR(COLOR_LIGHT_CYAN, COLOR_BLACK));
-            print_string("\n[JARVIS Agent >> ");
-            print_string(intercept_cmd);
-            print_string("]\n");
+            ollama_handle_agent_command(intercept_cmd);
             reset_text_color();
-
-            extern void screen_start_capture(void);
-            extern void screen_stop_capture(void);
-            extern char* screen_get_capture(void);
-
-            screen_start_capture();
-            shell_execute(intercept_cmd);
-            screen_stop_capture();
-
-            set_text_color(MAKE_COLOR(COLOR_LIGHT_MAGENTA, COLOR_BLACK));
-
-            char* output = screen_get_capture();
-            int out_len = strlen(output);
-            while (out_len > 0 && output[out_len - 1] == '\n') {
-                output[out_len - 1] = '\0';
-                out_len--;
-            }
-
-            static char feedback_prompt[2048];
-            strcpy(feedback_prompt, "[AGENT EXEC RESULT] `");
-            strcat(feedback_prompt, intercept_cmd);
-            strcat(feedback_prompt, "` \\nOutput:\\n\"");
-            int p_len = strlen(feedback_prompt);
-            if (out_len > 2000 - p_len - 60) out_len = 2000 - p_len - 60;
-            int curr = p_len;
-            for (int i = 0; i < out_len && output[i]; i++) {
-                feedback_prompt[curr++] = output[i];
-            }
-            feedback_prompt[curr] = '\0';
-            strcat(feedback_prompt, "\"\\nNext? (Use <EXEC_CMD:stop> if done)");
-
-            print_string("\n[Network: Queuing Agent Feedback...]\n");
-            extern void ollama_feedback_request(const char* ip_str, const char* feedback);
-            ollama_feedback_request(global_ip_str, feedback_prompt);
-
-            resp++;
-            break; // Essential: don't process multiple tags at once to avoid racing network state
+            return;
         }
 
         // ── Normal character ─────────────────────────────────────────────
@@ -343,6 +373,10 @@ void ollama_parse_json(char* payload) {
         resp++;
     }
 
+    if (agent_loop_active) {
+        agent_task_failed("AI response did not provide a read-only action or stop command.");
+        agent_loop_active = 0;
+    }
     reset_text_color();
 }
 
@@ -371,6 +405,9 @@ static err_t ollama_recv_cb(void *arg, struct tcp_pcb *tpcb,
         if (rx_accum_len > 0) {
             rx_accum[rx_accum_len] = '\0';
             ollama_parse_json(rx_accum);
+        } else if (agent_loop_active) {
+            agent_task_failed("AI connection closed without a response.");
+            agent_loop_active = 0;
         }
         reset_text_color();
         set_text_color(MAKE_COLOR(COLOR_LIGHT_GREEN, COLOR_BLACK));
@@ -416,6 +453,10 @@ void ollama_mock_intercept() {
 static err_t ollama_connected_cb(void *arg, struct tcp_pcb *tpcb, err_t err) {
     (void)arg;
     if (err != ERR_OK) {
+        if (agent_loop_active) {
+            agent_task_failed("Could not connect to the AI endpoint.");
+            agent_loop_active = 0;
+        }
         print_string("Network: Connection to Ollama FAILED (err=");
         kprint_dec((int)err);
         print_string(").\nJARVIS [/] $ ");
@@ -494,6 +535,10 @@ static err_t ollama_connected_cb(void *arg, struct tcp_pcb *tpcb, err_t err) {
 // ------------------------------------------------------------------
 static void ollama_err_cb(void *arg, err_t err) {
     (void)arg;
+    if (agent_loop_active) {
+        agent_task_failed("AI connection failed during the agent loop.");
+        agent_loop_active = 0;
+    }
     print_string("\nNetwork: TCP error (err=");
     kprint_dec((int)err);
     print_string(") — Ollama unreachable or reset.\nJARVIS [/] $ ");
@@ -510,13 +555,30 @@ void ollama_feedback_request(const char* ip_str, const char* feedback) {
         strcat(global_prompt, feedback);
     } else {
         print_string("Network: Memory limit reached for autonomous chain. Halting.\n");
+        if (agent_loop_active) {
+            agent_task_failed("Agent context limit reached.");
+            agent_loop_active = 0;
+        }
         return;
     }
 
     struct tcp_pcb *pcb = tcp_new();
-    if (!pcb) return;
+    if (!pcb) {
+        if (agent_loop_active) {
+            agent_task_failed("Could not allocate a TCP connection for agent feedback.");
+            agent_loop_active = 0;
+        }
+        return;
+    }
     ip4_addr_t server;
-    if (!ip4addr_aton(ip_str, &server)) { tcp_close(pcb); return; }
+    if (!ip4addr_aton(ip_str, &server)) {
+        tcp_close(pcb);
+        if (agent_loop_active) {
+            agent_task_failed("Invalid AI endpoint address.");
+            agent_loop_active = 0;
+        }
+        return;
+    }
     tcp_recv(pcb, ollama_recv_cb);
     tcp_err(pcb, ollama_err_cb);
     tcp_connect(pcb, &server, 11434, ollama_connected_cb);
@@ -537,7 +599,7 @@ void ollama_request(const char* ip_str, const char* prompt) {
 
     int ctx_len  = strlen(context_prompt);
     int user_len = strlen(prompt);
-    int max_user = (int)sizeof(context_prompt) - ctx_len - 64;
+    int max_user = (int)sizeof(context_prompt) - ctx_len - 96;
     if (max_user < 0) max_user = 0;
     if (user_len > max_user) user_len = max_user;
     
@@ -545,7 +607,10 @@ void ollama_request(const char* ip_str, const char* prompt) {
     strncpy(context_prompt + cur_len, prompt, user_len);
     context_prompt[cur_len + user_len] = '\0';
 
-    strcat(context_prompt, " | EXECUTE commands now.");
+    if (agent_loop_active)
+        strcat(context_prompt, " [AGENT TASK] Use bounded read-only tools and report observations.");
+    else
+        strcat(context_prompt, " Answer normally without executing tools.");
 
     int len = strlen(context_prompt);
     if (len > 1023) len = 1023;
@@ -558,6 +623,10 @@ void ollama_request(const char* ip_str, const char* prompt) {
     struct tcp_pcb *pcb = tcp_new();
     if (!pcb) {
         print_string("Network: Out of memory for TCP socket.\n");
+        if (agent_loop_active) {
+            agent_task_failed("Could not allocate an AI connection.");
+            agent_loop_active = 0;
+        }
         return;
     }
 
@@ -565,6 +634,10 @@ void ollama_request(const char* ip_str, const char* prompt) {
     if (!ip4addr_aton(ip_str, &server)) {
         print_string("Network: Invalid IP address format!\n");
         tcp_close(pcb);
+        if (agent_loop_active) {
+            agent_task_failed("Invalid AI endpoint address.");
+            agent_loop_active = 0;
+        }
         return;
     }
 
@@ -586,7 +659,21 @@ void ollama_request(const char* ip_str, const char* prompt) {
     if (e != ERR_OK) {
         print_string("Network: tcp_connect() failed.\n");
         tcp_close(pcb);
+        if (agent_loop_active) {
+            agent_task_failed("Could not start the AI connection.");
+            agent_loop_active = 0;
+        }
     }
+}
+
+void ollama_agent_request(const char* ip_str, const char* prompt) {
+    if (agent_loop_active) {
+        print_string("Agent ERROR: another task is already running.\n");
+        return;
+    }
+    agent_loop_active = 1;
+    agent_action_count = 0;
+    ollama_request(ip_str, prompt);
 }
 
 // ======================================================================

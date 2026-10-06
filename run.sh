@@ -175,7 +175,24 @@ fi
 echo "-------------------------------------------"
 
 if [[ "$*" == *"--run"* ]]; then
-    QEMU_ARGS="-m 4G -boot d -cdrom $ISO_NAME -drive file=$DISK_IMG,format=raw -serial mon:stdio -netdev user,id=n0 -device rtl8169,netdev=n0"
+    QEMU_ARGS="-m 4G -boot d -cdrom $ISO_NAME -drive file=$DISK_IMG,format=raw -serial mon:stdio -netdev user,id=n0 -device e1000,netdev=n0"
+
+    if [[ "$*" != *"--no-audio"* ]]; then
+        AUDIO_BACKEND="${HARVIS_AUDIO_BACKEND:-pipewire}"
+        AUDIO_ARGS="-audiodev $AUDIO_BACKEND,id=voiceaudio"
+        if [[ -n "${HARVIS_MIC_SOURCE:-}" ]]; then
+            case "$AUDIO_BACKEND" in
+                pipewire|pa) AUDIO_ARGS="$AUDIO_ARGS,in.name=$HARVIS_MIC_SOURCE" ;;
+                alsa) AUDIO_ARGS="$AUDIO_ARGS,in.dev=$HARVIS_MIC_SOURCE" ;;
+                *)
+                    echo "Unsupported HARVIS_AUDIO_BACKEND for HARVIS_MIC_SOURCE: $AUDIO_BACKEND"
+                    exit 1
+                    ;;
+            esac
+        fi
+        echo "QEMU microphone enabled ($AUDIO_BACKEND; source=${HARVIS_MIC_SOURCE:-default}). Use --no-audio to disable."
+        QEMU_ARGS="$QEMU_ARGS $AUDIO_ARGS -device intel-hda -device hda-micro,audiodev=voiceaudio"
+    fi
     
     if [[ "$*" == *"--uefi"* ]]; then
         # Find OVMF

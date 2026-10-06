@@ -18,7 +18,7 @@
 char shell_buffer[256];
 int buffer_idx = 0;
 const char* commands[] = {
-    "ls", "cd", "cat", "touch", "write", "rm", "mkdir", "rmdir", "clear", "echo", "help", "ps", "mem", "reboot", "sysinfo", "cpuid", "arch", "pci", "ahci", "ifconfig", "netstat", "ai", "ai_mock", "pktdump", "ping", "agent_ctx_set", "agent_ctx_get", "agent_task", NULL
+    "ls", "cd", "cat", "touch", "write", "rm", "mkdir", "rmdir", "clear", "echo", "help", "ps", "mem", "reboot", "sysinfo", "cpuid", "arch", "pci", "ahci", "ifconfig", "netstat", "ai", "ai_mock", "pktdump", "ping", "voice", "agent_ctx_set", "agent_ctx_get", "agent_plan", "agent_selfcheck", "agent_task", NULL
 };
 
 // Static variables for filename completion state
@@ -548,8 +548,12 @@ void shell_execute(char* cmd) {
         print_string("- ifconfig     (Show lwIP initialized network interfaces)\n");
         print_string("- netstat      (Show network usage statistics)\n");
         print_string("- ping <ip>    (Send ICMP Echo Request)\n");
+        print_string("- voice status|meter|train|listen (Offline local voice commands)\n");
         print_string("- ai <ip> <p>  (Send query to Autonomous Agent via Network)\n");
         print_string("- ai_mock      (Test Agentic intercept via fake Ollama payload)\n");
+        print_string("- agent_task <goal> (Run bounded read-only AI task; configure endpoint with agent_ctx_set ai_ip <ip>)\n");
+        print_string("- agent_plan <instruction> (Persist a bounded self-improvement plan)\n");
+        print_string("- agent_selfcheck (Mark task complete or needs_review based on persisted state)\n");
         print_string("- pktdump [on|off] (Hex dump of last packet, or toggle live stream)\n");
         print_string("- reboot       (Restart system)\n\n");
         return;
@@ -664,6 +668,81 @@ void shell_execute(char* cmd) {
         }
         return;
     }
+    else if (strcmp(cmd, "voice") == 0) {
+        extern void voice_train(const char* label);
+        extern void voice_listen(void);
+        extern int hda_mic_ready(void);
+        extern int hda_mic_start(void);
+        extern void hda_mic_stop(void);
+        extern uint32_t hda_mic_read(int16_t* samples, uint32_t capacity);
+        extern uint32_t hda_mic_dropped(void);
+        if (arg) {
+            char* separator = strstr(arg, " ");
+            if (separator) {
+                *separator = '\0';
+                char* label = separator + 1;
+                while (*label == ' ') label++;
+                if (strcmp(arg, "train") == 0 && *label) {
+                    voice_train(label);
+                    return;
+                }
+            }
+        }
+        if (arg && strcmp(arg, "listen") == 0) {
+            voice_listen();
+            return;
+        }
+        if (!arg || strcmp(arg, "status") == 0) {
+            print_string(hda_mic_ready() ? "Voice: HDA microphone ready.\n" : "Voice: HDA microphone unavailable. Run with --audio.\n");
+            return;
+        }
+        if (strcmp(arg, "meter") != 0) {
+            print_string("Usage: voice [status|meter]\n");
+            return;
+        }
+        if (!hda_mic_start()) {
+            print_string("Voice ERROR: microphone is not ready.\n");
+            return;
+        }
+
+        print_string("Voice: speak now; capturing for one second...\n");
+        uint32_t start_tick = timer_get_ticks();
+        uint32_t deadline = start_tick + 300;
+        uint32_t sample_count = 0;
+        uint32_t peak_level = 0;
+        uint32_t clipped_samples = 0;
+        uint64_t amplitude_sum = 0;
+        int16_t samples[256];
+        while (sample_count < 16000 && (int32_t)(timer_get_ticks() - deadline) < 0) {
+            uint32_t request_count = 16000 - sample_count;
+            if (request_count > 256) request_count = 256;
+            uint32_t count = hda_mic_read(samples, request_count);
+            for (uint32_t index = 0; index < count; index++) {
+                int32_t sample = samples[index];
+                uint32_t level = (uint32_t)(sample < 0 ? -sample : sample);
+                if (level > peak_level) peak_level = level;
+                if (level >= 32000) clipped_samples++;
+                amplitude_sum += level;
+            }
+            sample_count += count;
+            if (count == 0) asm volatile("hlt");
+        }
+        hda_mic_stop();
+        print_string("Voice capture samples: ");
+        kprint_dec(sample_count);
+        print_string(" peak: ");
+        kprint_dec(peak_level);
+        print_string(" mean: ");
+        kprint_dec(sample_count ? (uint32_t)(amplitude_sum / sample_count) : 0);
+        print_string(" clipped: ");
+        kprint_dec(clipped_samples);
+        print_string(" ticks: ");
+        kprint_dec(timer_get_ticks() - start_tick);
+        print_string(" dropped: ");
+        kprint_dec(hda_mic_dropped());
+        print_string("\n");
+        return;
+    }
     else if (strcmp(cmd, "agent_ctx_set") == 0) {
         if (!arg) { print_string("Usage: agent_ctx_set <key> <value>\n"); return; }
         char* space = strstr(arg, " ");
@@ -682,6 +761,22 @@ void shell_execute(char* cmd) {
         if (!arg) { print_string("Usage: agent_ctx_get <key>\n"); return; }
         extern void agent_ctx_get(const char* k);
         agent_ctx_get(arg);
+        return;
+    }
+    else if (strcmp(cmd, "agent_plan") == 0) {
+        if (!arg) { print_string("Usage: agent_plan <instruction>\n"); return; }
+        extern void agent_plan(const char* inst);
+        agent_plan(arg);
+        return;
+    }
+    else if (strcmp(cmd, "agent_complete") == 0) {
+        extern void agent_complete_task(void);
+        agent_complete_task();
+        return;
+    }
+    else if (strcmp(cmd, "agent_selfcheck") == 0) {
+        extern void agent_selfcheck(void);
+        agent_selfcheck();
         return;
     }
     else if (strcmp(cmd, "agent_task") == 0) {

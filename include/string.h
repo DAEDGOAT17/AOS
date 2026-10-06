@@ -11,6 +11,7 @@ char *strstr(const char *haystack, const char *needle);
 char* strcpy(char* dest, const char* src);
 char* strncpy(char* dest, const char* src, size_t n);
 char* strcat(char* dest, const char* src);
+char* strchr(const char* s, int c);
 
 void* memset(void* bufptr, int value, size_t size);
 void* memcpy(void* dstptr, const void* srcptr, size_t size);

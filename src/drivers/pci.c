@@ -69,6 +69,10 @@ void pci_scan_multimedia() {
                     uint16_t device_id = (id >> 16) & 0xFFFF;
                     kprint_hex(device_id);
                     print_string("\n");
+                    if (vendor_id == 0x8086 && device_id == 0x2668) {
+                        extern void hda_audio_init(uint32_t bus, uint32_t device, uint32_t function);
+                        hda_audio_init(bus, device, function);
+                    }
                 }
             }
         }
@@ -196,9 +200,9 @@ void pci_scan_network() {
                             extern void rtl8169_init(uint32_t bus, uint32_t device, uint32_t function);
                             rtl8169_init(bus, device, function);
                         } else if (vendor_id == 0x8086 && device_id == 0x100E) {
-                            print_string("\nPCI: Intel E1000 matched. Loading QEMU Virtual Net...\n");
-                            extern void qemu_net_init();
-                            qemu_net_init();
+                            print_string("\nPCI: Intel E1000 matched. Initializing DMA network driver...\n");
+                            extern void e1000_init(uint32_t bus, uint32_t device, uint32_t function);
+                            e1000_init(bus, device, function);
                         }
                     }
                     else if (subclass == 0x80) print_string(" Wi-Fi / Other");
