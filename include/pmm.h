@@ -101,6 +101,10 @@ extern uint64_t ramdisk_start;
 extern uint64_t ramdisk_size;
 extern uint8_t  ramdisk_loaded;
 
+extern uint64_t whisper_model_start;
+extern uint64_t whisper_model_end;
+extern uint8_t  whisper_model_loaded;
+
 void pmm_init(uint32_t magic, void* mbd);
 void* pmm_alloc_block();
 void pmm_free_block(void* addr);

@@ -7,11 +7,13 @@ bits 64
 global keyboard_asm_handler
 global timer_asm_handler
 global page_fault_asm_handler
+global general_protection_asm_handler
 global dummy_exception_handler
 
 extern keyboard_handler
 extern timer_handler
 extern page_fault_handler
+extern general_protection_handler
 
 ; =============================================================================
 ; Macro: save / restore caller-saved registers around an IRQ handler
@@ -58,14 +60,26 @@ extern page_fault_handler
 page_fault_asm_handler:
     SAVE_REGS
 
-    ; error_code is at [rsp + 9*8] (9 saved regs × 8 bytes)
-    mov  rdi, [rsp + 9*8]     ; error code  → rdi (arg1)
-    mov  rsi, cr2             ; faulting addr → rsi (arg2)
+    ; error_code is at [rsp + 9*8] and fault RIP is immediately after it
+    mov  rdi, [rsp + 9*8]     ; error code → rdi
+    mov  rsi, cr2             ; faulting addr → rsi
+    mov  rdx, [rsp + (9*8) + 8] ; fault RIP → rdx
 
     call page_fault_handler
 
     RESTORE_REGS
     add  rsp, 8               ; discard error code pushed by CPU
+    iretq
+
+general_protection_asm_handler:
+    SAVE_REGS
+
+    mov  rdi, [rsp + 9*8]
+    mov  rsi, [rsp + (9*8) + 8]
+    call general_protection_handler
+
+    RESTORE_REGS
+    add  rsp, 8
     iretq
 
 ; =============================================================================

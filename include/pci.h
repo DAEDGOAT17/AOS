@@ -19,5 +19,7 @@ void pci_scan_storage();
 // Scan the PCI bus and print Network Controllers (class 0x02)
 void pci_scan_network();
 
+int aos_apply_network_setup(const char *request);
+
 #endif
 

@@ -24,22 +24,42 @@ void mat_mul_fixed(const int32_t *A, const int32_t *B, int32_t *C, uint32_t n, u
 
 float sqrtf(float x) {
     if (x <= 0.0f) return 0.0f;
-    float res = x;
-    for (int i = 0; i < 10; i++) {
-        res = 0.5f * (res + x / res);
+    float result = x < 1.0f ? 1.0f : x;
+    for (int iteration = 0; iteration < 64; iteration++) {
+        float next = 0.5f * (result + x / result);
+        float difference = next > result ? next - result : result - next;
+        result = next;
+        if (difference <= result * 1.0e-6f) break;
     }
-    return res;
+    return result;
 }
 
 float expf(float x) {
     if (x > 20.0f) x = 20.0f;
     if (x < -20.0f) x = -20.0f;
-    
+
+    const float ln2 = 0.6931471806f;
+    int exponent = (int)(x / ln2);
+    float reduced = x - (float)exponent * ln2;
+    if (reduced < 0.0f) {
+        reduced += ln2;
+        exponent--;
+    }
+
     float sum = 1.0f;
     float term = 1.0f;
-    for (int i = 1; i <= 25; i++) {
-        term = term * x / i;
+    for (int i = 1; i <= 10; i++) {
+        term = term * reduced / (float)i;
         sum += term;
+    }
+
+    while (exponent > 0) {
+        sum *= 2.0f;
+        exponent--;
+    }
+    while (exponent < 0) {
+        sum *= 0.5f;
+        exponent++;
     }
     return sum;
 }

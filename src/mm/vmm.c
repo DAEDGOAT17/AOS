@@ -2,11 +2,34 @@
 #include "pmm.h"
 #include "io.h"
 #include "screen.h"
+#include "arch/x86_64/trap_recovery.h"
 #include <stdint.h>
 
 extern uint64_t pml4_table[512]; // Defined in loader.s
 
 extern void vmm_load_pml4(uint64_t phys_addr);
+
+static uint64_t g_exec_page_base = 0x100000000ULL;
+
+void* vmm_alloc_exec_pages(uint32_t num_pages) {
+    if (num_pages == 0) {
+        return (void*)0;
+    }
+
+    uint64_t virtual_addr = g_exec_page_base;
+    uint64_t total_size = (uint64_t)num_pages * 4096ULL;
+    g_exec_page_base += total_size;
+
+    for (uint32_t page_index = 0; page_index < num_pages; ++page_index) {
+        uint64_t physical_addr = (uint64_t)pmm_alloc_block();
+        if (!physical_addr) {
+            return (void*)0;
+        }
+        vmm_map_page(virtual_addr + (page_index * 4096ULL), physical_addr);
+    }
+
+    return (void*)virtual_addr;
+}
 
 void vmm_init() {
     extern uint32_t* fb_ptr;
@@ -30,6 +53,13 @@ void vmm_init() {
             uint64_t addr = ramdisk_start + offset;
             vmm_map_page(addr, addr);
         }
+    }
+
+    if (whisper_model_loaded && whisper_model_end > whisper_model_start) {
+        uint64_t model_start = whisper_model_start & ~4095ULL;
+        uint64_t model_end = (whisper_model_end + 4095) & ~4095ULL;
+        for (uint64_t addr = model_start; addr < model_end; addr += 4096)
+            vmm_map_page(addr, addr);
     }
 
     // 3. Identity map first 16MB to ensure kernel and page tables are available
@@ -77,20 +107,67 @@ void vmm_map_page(uint64_t virtual_addr, uint64_t physical_addr) {
     asm volatile("invlpg (%0)" : : "r"(virtual_addr) : "memory");
 }
 
-void page_fault_handler(uint64_t error_code, uint64_t faulting_addr) {
+int vmm_set_page_writable(uint64_t virtual_addr, int writable) {
+    uint64_t pml4_idx = (virtual_addr >> 39) & 0x1FF;
+    uint64_t pdpt_idx = (virtual_addr >> 30) & 0x1FF;
+    uint64_t pd_idx = (virtual_addr >> 21) & 0x1FF;
+    uint64_t pt_idx = (virtual_addr >> 12) & 0x1FF;
+    uint64_t *pdpt;
+    uint64_t *pd;
+    uint64_t *pt;
+    uint64_t *pte;
+    uint64_t cr0;
+
+    if (!(pml4_table[pml4_idx] & VMM_PRESENT)) {
+        return 0;
+    }
+    pdpt = (uint64_t *)(pml4_table[pml4_idx] & ~0xFFFULL);
+    if (!(pdpt[pdpt_idx] & VMM_PRESENT)) {
+        return 0;
+    }
+    pd = (uint64_t *)(pdpt[pdpt_idx] & ~0xFFFULL);
+    if (!(pd[pd_idx] & VMM_PRESENT) || (pd[pd_idx] & 0x80)) {
+        return 0;
+    }
+    pt = (uint64_t *)(pd[pd_idx] & ~0xFFFULL);
+    pte = &pt[pt_idx];
+    if (!(*pte & VMM_PRESENT)) {
+        return 0;
+    }
+
+    if (writable) {
+        *pte |= VMM_WRITABLE;
+    } else {
+        asm volatile("mov %%cr0, %0" : "=r"(cr0));
+        cr0 |= 1ULL << 16;
+        asm volatile("mov %0, %%cr0" : : "r"(cr0) : "memory");
+        *pte &= ~((uint64_t)VMM_WRITABLE);
+    }
+
+    virtual_addr &= ~0xFFFULL;
+    asm volatile("invlpg (%0)" : : "r"(virtual_addr) : "memory");
+    return 1;
+}
+
+void page_fault_handler(uint64_t error_code, uint64_t faulting_addr, uint64_t fault_rip) {
+    uintptr_t rsp = 0;
+
     asm volatile("cli");
+    asm volatile("mov %%rsp, %0" : "=r"(rsp));
 
     print_string("\n\n\n");
     print_string("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!\n");
     print_string("          KERNEL PANIC: PAGE FAULT               \n");
     print_string("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!\n\n");
 
-    print_string("Faulting Address: ");
-    kprint_hex((uint32_t)(faulting_addr >> 32)); // print high word
+    trap_capture_and_dump(fault_rip, faulting_addr, rsp, error_code);
+
+    print_string("Faulting Address: 0x");
+    kprint_hex((uint32_t)(faulting_addr >> 32));
     kprint_hex((uint32_t)faulting_addr);
     print_string("\n");
 
-    print_string("Error Code: ");
+    print_string("Error Code: 0x");
     kprint_hex((uint32_t)error_code);
     print_string(" (");
 
@@ -107,16 +184,8 @@ void page_fault_handler(uint64_t error_code, uint64_t faulting_addr) {
     if (id)       print_string("instruction-fetch ");
     print_string(")\n\n");
 
-    print_string("The system will automatically reboot in 5 seconds...\n");
-
-    for (int i = 5; i > 0; i--) {
-        print_string("Rebooting in ");
-        kprint_dec(i);
-        print_string("... \n");
-        for (volatile uint32_t j = 0; j < 100000000; j++) asm volatile("nop");
+    print_string("JIT: page fault captured, serial dump emitted, halting\n");
+    for (;;) {
+        asm volatile("hlt");
     }
-
-    print_string("Rebooting now!\n");
-    extern void sys_reboot();
-    sys_reboot();
 }

@@ -25,6 +25,8 @@ void task_init() {
 }
 
 int task_create(const char* name, void (*function)(void), uint32_t priority) {
+    if (!name || !function) return -1;
+
     // Find free slot
     for (int i = 1; i < MAX_TASKS; i++) {
         if (tasks[i].state == TASK_DEAD) {
@@ -49,6 +51,8 @@ int task_create(const char* name, void (*function)(void), uint32_t priority) {
 }
 
 void task_kill(uint32_t id) {
+    if (id == 0) return;
+
     for (int i = 0; i < MAX_TASKS; i++) {
         if (tasks[i].id == id) {
             tasks[i].state = TASK_DEAD;
@@ -89,36 +93,34 @@ void task_list() {
 }
 
 void task_yield() {
-    // Simple round-robin scheduler
-    uint32_t start = current_task_id;
-    
-    do {
-        current_task_id = (current_task_id + 1) % MAX_TASKS;
-        
-        // Check if task can run
-        if (tasks[current_task_id].state == TASK_READY) {
-            // Check if sleeping
-            if (tasks[current_task_id].wake_time > 0) {
-                if (timer_get_ticks() >= tasks[current_task_id].wake_time) {
-                    tasks[current_task_id].wake_time = 0;
-                    break;
-                }
-            } else {
-                break;
-            }
+    uint32_t now = timer_get_ticks();
+    for (uint32_t index = 1; index < MAX_TASKS; index++) {
+        if (tasks[index].state == TASK_WAITING &&
+            (int32_t)(now - tasks[index].wake_time) >= 0) {
+            tasks[index].wake_time = 0;
+            tasks[index].state = TASK_READY;
         }
-    } while (current_task_id != start);
-    
-    // Execute task function
-    if (tasks[current_task_id].function) {
-        tasks[current_task_id].state = TASK_RUNNING;
-        tasks[current_task_id].function();
-        tasks[current_task_id].state = TASK_READY;
+    }
+
+    for (uint32_t offset = 1; offset <= MAX_TASKS; offset++) {
+        uint32_t next = (current_task_id + offset) % MAX_TASKS;
+        if (tasks[next].state != TASK_READY) continue;
+
+        current_task_id = next;
+        if (!tasks[next].function) return;
+
+        tasks[next].state = TASK_RUNNING;
+        tasks[next].function();
+        if (tasks[next].state == TASK_RUNNING)
+            tasks[next].state = TASK_READY;
+        return;
     }
 }
 
 void task_sleep(uint32_t ticks) {
+    if (current_task_id == 0 || current_task_id >= MAX_TASKS) return;
     task_t* current = &tasks[current_task_id];
+    if (current->state != TASK_RUNNING) return;
     current->wake_time = timer_get_ticks() + ticks;
     current->state = TASK_WAITING;
 }

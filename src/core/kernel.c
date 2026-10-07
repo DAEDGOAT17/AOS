@@ -2,6 +2,7 @@
 #include "vmm.h"
 #include "gdt.h"
 #include "idt.h"
+#include "whisper.h"
 #include "screen.h"
 #include "kmalloc.h" 
 #include "task.h"
@@ -10,6 +11,7 @@
 #include "fat32.h"
 #include "pci.h"
 #include "timer.h"
+#include "core/self_evolve.h"
 // Keep kmain minimal: boot prints general info only
 
 void kmain(uint32_t magic, multiboot_info_t* mbd) {
@@ -38,6 +40,13 @@ void kmain(uint32_t magic, multiboot_info_t* mbd) {
     print_string("Kernel: PMM OK\n");
     print_string("Kernel: Init IDT OK\n");
     print_string("Kernel: VMM OK\n");
+
+    if (whisper_model_loaded) {
+        if (whisper_model_init())
+            print_string("Kernel: Whisper GGML model validated\n");
+        else
+            print_string("Kernel: Whisper model invalid or unsupported\n");
+    }
     
     kmalloc_init();
     print_string("Kernel: Kmalloc OK\n");
@@ -160,6 +169,8 @@ void kmain(uint32_t magic, multiboot_info_t* mbd) {
     print_color_string("  >> Type 'help' for commands  |  'sysinfo' for full report\n", MAKE_COLOR(COLOR_LIGHT_CYAN, COLOR_BLACK));
     print_color_string("  ================================================\n",  MAKE_COLOR(COLOR_LIGHT_BLUE, COLOR_BLACK));
     print_char('\n');
+
+    self_evolve_init();
 
     while (1) {
         task_yield();

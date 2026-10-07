@@ -4,8 +4,12 @@
 #include "timer.h"
 #include "screen.h"
 #include "string.h"
+#include "infer.h"
+#include "whisper.h"
+#include "shell.h"
 
 #define VOICE_SAMPLE_COUNT 16000
+#define VOICE_DICTATION_MAX_SAMPLES WHISPER_MAX_LIVE_PCM_SAMPLES
 #define VOICE_FRAME_SIZE 256
 #define VOICE_FRAME_HOP 160
 #define VOICE_MAX_FRAMES 100
@@ -39,8 +43,18 @@ static const int32_t goertzel_coefficients[8] = {
 };
 
 static int16_t voice_pcm[VOICE_SAMPLE_COUNT];
+static int16_t voice_dictation_pcm[VOICE_DICTATION_MAX_SAMPLES];
 static uint32_t dtw_previous[VOICE_MAX_FRAMES + 1];
 static uint32_t dtw_current[VOICE_MAX_FRAMES + 1];
+
+static int voice_transcript_has_word(const char* text) {
+    if (!text) return 0;
+    for (; *text; text++) {
+        if ((*text >= 'a' && *text <= 'z') || (*text >= 'A' && *text <= 'Z') ||
+            (*text >= '0' && *text <= '9')) return 1;
+    }
+    return 0;
+}
 
 static int voice_capture(int16_t* samples, uint32_t target_count) {
     if (!samples || !hda_mic_start()) return 0;
@@ -235,10 +249,100 @@ void voice_listen(void) {
     kprint_dec(best_score);
     print_string("\n");
 
+    infer_result_t decision;
+    char routed_command[64];
+    char prompt[64];
+    strcpy(prompt, best_command->label);
+    if (infer_decide(prompt, &decision) == 0 && decision.action != INFER_ACTION_NONE && decision.safe) {
+        if (infer_route_decision(&decision, routed_command, sizeof(routed_command)) == 0 && routed_command[0] != '\0') {
+            extern void shell_execute(char* cmd);
+            shell_execute(routed_command);
+            return;
+        }
+    }
+
     if (best_command->shell_command) {
         char command[16];
         strcpy(command, best_command->shell_command);
         extern void shell_execute(char* cmd);
         shell_execute(command);
     }
+}
+
+void voice_type(void) {
+    if (!whisper_model_ready()) {
+        print_string("Voice ERROR: Whisper model is unavailable. Include a tiny.en model module at boot.\n");
+        return;
+    }
+
+    if (!hda_mic_start()) {
+        print_string("Voice ERROR: microphone is not ready.\n");
+        return;
+    }
+
+    print_string("Voice typing: speak now; short phrases only (about 1.5s limit).\n");
+    uint32_t captured = 0;
+    uint32_t silence_samples = 0;
+    uint32_t start_tick = timer_get_ticks();
+    uint32_t hard_deadline = start_tick + 160;
+    uint32_t empty_deadline = start_tick + 35;
+    int speech_detected = 0;
+    int16_t samples[256];
+
+    while (captured < VOICE_DICTATION_MAX_SAMPLES &&
+           (int32_t)(timer_get_ticks() - hard_deadline) < 0) {
+        uint32_t request = VOICE_DICTATION_MAX_SAMPLES - captured;
+        if (request > sizeof(samples) / sizeof(samples[0]))
+            request = sizeof(samples) / sizeof(samples[0]);
+        uint32_t count = hda_mic_read(samples, request);
+        if (count == 0) {
+            if (!speech_detected && (int32_t)(timer_get_ticks() - empty_deadline) >= 0)
+                break;
+            asm volatile("hlt");
+            continue;
+        }
+
+        uint64_t energy = 0;
+        for (uint32_t index = 0; index < count; index++) {
+            int32_t sample = samples[index];
+            energy += (uint64_t)(sample * sample);
+            voice_dictation_pcm[captured + index] = samples[index];
+        }
+        captured += count;
+
+        if (energy >= (uint64_t)count * 250000ULL) {
+            speech_detected = 1;
+            silence_samples = 0;
+        } else if (speech_detected) {
+            silence_samples += count;
+            if (silence_samples >= 2000) {
+                captured -= silence_samples;
+                break;
+            }
+        }
+    }
+
+    hda_mic_stop();
+    if (!speech_detected || captured < 1600) {
+        print_string("Voice typing: no speech detected.\n");
+        return;
+    }
+
+    print_string("Voice typing: transcribing locally...\n");
+    char transcript[256];
+    if (!whisper_transcribe_pcm(voice_dictation_pcm, captured,
+            transcript, sizeof(transcript))) {
+        print_string("Voice ERROR: Whisper could not transcribe this recording.\n");
+        return;
+    }
+    if (!voice_transcript_has_word(transcript)) {
+        print_string("Voice typing: no text recognized.\n");
+        return;
+    }
+
+    print_string("Voice typing recognized: ");
+    print_string(transcript);
+    print_string("\n");
+    shell_queue_text(transcript);
+    print_string("Voice typing: transcription placed in the shell prompt.\n");
 }

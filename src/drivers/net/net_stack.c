@@ -23,9 +23,10 @@
 extern void shell_execute(char* cmd);
 
 // ------------------------------------------------------------------
-// Change to match the exact model name shown by 'ollama list'
+// Use a lightweight local model that is realistic for a laptop-sized
+// install and easy to pull without requiring a huge host dependency.
 // ------------------------------------------------------------------
-#define OLLAMA_MODEL "gemma:12b"
+#define OLLAMA_MODEL "gemma3:1b"
 
 static char global_prompt[8192];
 static char global_ip_str[32];
@@ -40,6 +41,9 @@ static int agent_action_count = 0;
     "Use at most four successful tools, one per response, formatted exactly as <EXEC_CMD:tool>. Never use shell chaining, writes, deletes, networking, reboot, or other commands.\\n" \
     "Inspect each actual tool output before deciding the next action. When the goal is satisfied, output <EXEC_CMD:stop>. If it cannot be safely completed, output <EXEC_CMD:stop>; the OS will request review if there is no successful evidence.\\n" \
     "Do not claim an action succeeded unless its output confirms it."
+
+#define CHAT_SYSTEM_PROMPT \
+    "You are JARVIS for Jarvis OS. Answer the user directly in plain text. Do not output JSON, markdown fences, or tool commands."
 
 static int agent_readonly_command(const char* command) {
     const char* arg = command;
@@ -473,8 +477,9 @@ static err_t ollama_connected_cb(void *arg, struct tcp_pcb *tpcb, err_t err) {
     static char json_body[16384];
     strcpy(json_body,
         "{\"model\":\"" OLLAMA_MODEL "\","
-        "\"system\":\"" SYSTEM_PROMPT "\","
-        "\"prompt\":\"");
+        "\"system\":\"");
+    strcat(json_body, agent_loop_active ? SYSTEM_PROMPT : CHAT_SYSTEM_PROMPT);
+    strcat(json_body, "\",\"prompt\":\"");
 
     // Append escaped user prompt only if it fits.
     int used = strlen(json_body);

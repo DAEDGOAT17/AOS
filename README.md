@@ -22,6 +22,18 @@ The full architecture documentation, development guides, and subsystem deep-dive
 ./run.sh --run --uefi # Runs in UEFI (Modern) mode
 ```
 
+### Offline Voice Typing
+
+Download the ignored, local Whisper tiny-English model before building:
+
+```bash
+mkdir -p models
+curl -L --fail https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-tiny.en.bin -o models/ggml-tiny.en.bin
+./run.sh --run
+```
+
+At the AOS prompt, run `voice type`, speak, then pause. The locally transcribed text is inserted into the shell prompt for review; it is not executed until you press Enter. The model is loaded as a boot module and inference runs in the kernel without Python or network access.
+
 ## 📋 Overview
 Jarvis OS is a comprehensive educational operating system kernel designed to teach modern x86_64 architecture principles, memory management, process scheduling, and AI integration. Built entirely in C with minimal assembly, it provides hands-on experience with real OS concepts including boot sequences, interrupt handling, virtual memory, and filesystem implementation.
 

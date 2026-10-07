@@ -17,6 +17,10 @@ uint64_t ramdisk_start  = 0;
 uint64_t ramdisk_size   = 0;
 uint8_t  ramdisk_loaded = 0;
 
+uint64_t whisper_model_start = 0;
+uint64_t whisper_model_end = 0;
+uint8_t whisper_model_loaded = 0;
+
 // Symbols from link.ld
 extern uint32_t _kernel_start;
 extern uint32_t _kernel_end;
@@ -35,6 +39,35 @@ static void pmm_clear_bit(uint32_t bit) {
     }
 }
 
+static void pmm_mark_available_range(uint64_t address, uint64_t length) {
+    if (length == 0 || address > UINT64_MAX - length ||
+        address > UINT64_MAX - (PMM_BLOCK_SIZE - 1)) return;
+
+    uint64_t page = (address + PMM_BLOCK_SIZE - 1) &
+        ~((uint64_t)PMM_BLOCK_SIZE - 1);
+    uint64_t end = (address + length) & ~((uint64_t)PMM_BLOCK_SIZE - 1);
+    while (page < end) {
+        uint64_t block = page / PMM_BLOCK_SIZE;
+        if (block >= PMM_BITMAP_SIZE * 8ULL) break;
+        pmm_clear_bit((uint32_t)block);
+        page += PMM_BLOCK_SIZE;
+    }
+}
+
+static int pmm_contains_text(const char* text, const char* token) {
+    if (!text || !token || !token[0]) return 0;
+    for (const char* start = text; *start; start++) {
+        const char* left = start;
+        const char* right = token;
+        while (*left && *right && *left == *right) {
+            left++;
+            right++;
+        }
+        if (!*right) return 1;
+    }
+    return 0;
+}
+
 void pmm_init(uint32_t magic, void* mbd_ptr) {
     // 1. Mark everything as RESERVED
     for (int i = 0; i < PMM_BITMAP_SIZE; i++) pmm_bitmap[i] = 0xFF;
@@ -50,15 +83,7 @@ void pmm_init(uint32_t magic, void* mbd_ptr) {
 
             while((uint64_t)mmap < mmap_end) {
                 if (mmap->type == 1) { // Available RAM
-                    uint64_t addr = mmap->addr;
-                    uint64_t len = mmap->len;
-                    uint64_t end_addr = addr + len;
-                    
-                    while (addr < end_addr) {
-                        uint32_t block = (uint32_t)(addr / PMM_BLOCK_SIZE);
-                        if (block < (PMM_BITMAP_SIZE * 8)) pmm_clear_bit(block);
-                        addr += PMM_BLOCK_SIZE;
-                    }
+                    pmm_mark_available_range(mmap->addr, mmap->len);
                 }
                 mmap = (multiboot_mmap_entry_t*)((uint64_t)mmap + mmap->size + sizeof(mmap->size));
             }
@@ -91,6 +116,10 @@ void pmm_init(uint32_t magic, void* mbd_ptr) {
                         ramdisk_start  = mods[i].mod_start;
                         ramdisk_size   = mods[i].mod_end - mods[i].mod_start;
                         ramdisk_loaded = 1;
+                    } else if (pmm_contains_text(str, "whisper_model")) {
+                        whisper_model_start = mods[i].mod_start;
+                        whisper_model_end = mods[i].mod_end;
+                        whisper_model_loaded = whisper_model_end > whisper_model_start;
                     }
                 }
             }
@@ -112,28 +141,18 @@ void pmm_init(uint32_t magic, void* mbd_ptr) {
             if (tag->type == 6) { // Memory map tag
                 multiboot2_mmap_tag_t* mmap_tag = (multiboot2_mmap_tag_t*)tag;
                 uint32_t entry_size = mmap_tag->entry_size;
-                uint32_t num_entries = (mmap_tag->size - sizeof(multiboot2_mmap_tag_t)) / entry_size;
-                
-                uint8_t* entry_ptr = (uint8_t*)mmap_tag + sizeof(multiboot2_mmap_tag_t);
-                for (uint32_t i = 0; i < num_entries; i++) {
-                    multiboot2_mmap_entry_t* entry = (multiboot2_mmap_entry_t*)entry_ptr;
-                    // Check entry validity and type
-                    if (entry->type == 1) { // Available RAM
-                        uint64_t addr = entry->addr;
-                        uint64_t len = entry->len;
-                        
-                        // Break length into blocks and clear bits
-                        uint32_t num_blocks = (uint32_t)(len / PMM_BLOCK_SIZE);
-                        for (uint64_t b = 0; b < num_blocks; b++) {
-                            uint32_t block = (uint32_t)(addr / PMM_BLOCK_SIZE) + (uint32_t)b;
-                            if (block < (PMM_BITMAP_SIZE * 8)) {
-                                pmm_clear_bit(block);
-                            } else {
-                                break; // Outside our tracking range
-                            }
+                if (entry_size >= sizeof(multiboot2_mmap_entry_t) &&
+                    mmap_tag->size >= sizeof(multiboot2_mmap_tag_t)) {
+                    uint32_t payload_size = mmap_tag->size - sizeof(multiboot2_mmap_tag_t);
+                    uint32_t num_entries = payload_size / entry_size;
+                    uint8_t* entry_ptr = (uint8_t*)mmap_tag + sizeof(multiboot2_mmap_tag_t);
+                    for (uint32_t i = 0; i < num_entries; i++) {
+                        multiboot2_mmap_entry_t* entry = (multiboot2_mmap_entry_t*)entry_ptr;
+                        if (entry->type == 1) {
+                            pmm_mark_available_range(entry->addr, entry->len);
                         }
+                        entry_ptr += entry_size;
                     }
-                    entry_ptr += entry_size;
                 }
             } else if (tag->type == 8) { // Framebuffer tag
                 multiboot2_fb_tag_t* fb_tag = (multiboot2_fb_tag_t*)tag;
@@ -156,6 +175,10 @@ void pmm_init(uint32_t magic, void* mbd_ptr) {
                     ramdisk_start  = mod_tag->mod_start;
                     ramdisk_size   = mod_tag->mod_end - mod_tag->mod_start;
                     ramdisk_loaded = 1;
+                } else if (pmm_contains_text(mod_tag->string, "whisper_model")) {
+                    whisper_model_start = mod_tag->mod_start;
+                    whisper_model_end = mod_tag->mod_end;
+                    whisper_model_loaded = whisper_model_end > whisper_model_start;
                 } else if (mod_tag->string[0] == 'a' && mod_tag->string[1] == 'i') {
                     initrd_brain_start = mod_tag->mod_start;
                     initrd_brain_end   = mod_tag->mod_end;
@@ -197,6 +220,14 @@ void pmm_init(uint32_t magic, void* mbd_ptr) {
         uint32_t rd_start_block = (uint32_t)(ramdisk_start / PMM_BLOCK_SIZE);
         uint32_t rd_end_block   = (uint32_t)((ramdisk_start + ramdisk_size + PMM_BLOCK_SIZE - 1) / PMM_BLOCK_SIZE);
         for (uint32_t i = rd_start_block; i <= rd_end_block; i++) {
+            pmm_set_bit(i);
+        }
+    }
+
+    if (whisper_model_loaded) {
+        uint32_t model_start_block = (uint32_t)(whisper_model_start / PMM_BLOCK_SIZE);
+        uint32_t model_end_block = (uint32_t)((whisper_model_end + PMM_BLOCK_SIZE - 1) / PMM_BLOCK_SIZE);
+        for (uint32_t i = model_start_block; i < model_end_block; i++) {
             pmm_set_bit(i);
         }
     }

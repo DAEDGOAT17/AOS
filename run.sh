@@ -5,6 +5,9 @@ set -e
 
 # Configuration
 ISO_NAME="jarvis.iso"
+WHISPER_MODEL_FILE="${WHISPER_MODEL_FILE:-models/ggml-tiny.en.bin}"
+WHISPER_MODEL_MODULE=""
+WHISPER_MODEL_MODULE_BIOS=""
 DISK_IMG="disk.img"
 BUILD_DIR="build"
 ISO_DIR="iso"
@@ -45,6 +48,15 @@ ld -m elf_x86_64 -T link.ld -o "$KERNEL_ELF" "$BUILD_DIR"/*.o
 echo "--- Step 5: Preparing ISO Structure ---"
 cp "$KERNEL_ELF" "$ISO_DIR/boot/$KERNEL_ELF"
 
+if [[ -f "$WHISPER_MODEL_FILE" ]]; then
+    cp "$WHISPER_MODEL_FILE" "$ISO_DIR/boot/whisper-model.bin"
+    WHISPER_MODEL_MODULE="module2 /boot/whisper-model.bin whisper_model"
+    WHISPER_MODEL_MODULE_BIOS="module /boot/whisper-model.bin whisper_model"
+    echo "Whisper model module included: $WHISPER_MODEL_FILE"
+else
+    echo "Whisper model not found at $WHISPER_MODEL_FILE; booting without it."
+fi
+
 # Generate Modern GRUB Config (supports Multiboot2 for UEFI)
 # NOTE: module2 loads the ramdisk as physical RAM so the kernel's ATA driver
 # can use it as a FAT32 filesystem on hardware with no legacy IDE disk.
@@ -74,6 +86,7 @@ menuentry "Jarvis OS (UEFI / BIOS - 64bit)" {
     multiboot2 /boot/$KERNEL_ELF
     echo "Loading ramdisk..."
     module2 /boot/ramdisk.img disk
+    $WHISPER_MODEL_MODULE
     echo "Booting..."
     sleep 3
     boot
@@ -86,6 +99,7 @@ menuentry "Jarvis OS (Legacy BIOS - Multiboot1)" {
     multiboot /boot/$KERNEL_ELF
     echo "Loading ramdisk..."
     module /boot/ramdisk.img disk
+    $WHISPER_MODEL_MODULE_BIOS
     echo "Booting..."
     sleep 3
     boot

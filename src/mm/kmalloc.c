@@ -5,6 +5,8 @@
 
 // Heap starts at 8GB (after 4GB identity-mapped region)
 #define HEAP_START 0x200000000ULL
+#define KMALLOC_ALIGNMENT 16
+#define KMALLOC_MAX_HEAP_SIZE (UINT32_MAX & ~((uint64_t)4095))
 uint64_t dynamic_heap_size = 0;
 
 // Block header structure
@@ -26,6 +28,9 @@ void kmalloc_init() {
         dynamic_heap_size = 16 * 1024 * 1024; // 16MB minimum fallback
     }
 
+    if (dynamic_heap_size > KMALLOC_MAX_HEAP_SIZE)
+        dynamic_heap_size = KMALLOC_MAX_HEAP_SIZE;
+
     // Map heap region in virtual memory
     for (uint64_t addr = HEAP_START; addr < HEAP_START + dynamic_heap_size; addr += 4096) {
         void* phys = pmm_alloc_block();
@@ -37,6 +42,12 @@ void kmalloc_init() {
             break;
         }
     }
+
+    if (dynamic_heap_size < sizeof(block_header_t) + KMALLOC_ALIGNMENT) {
+        heap_start = NULL;
+        dynamic_heap_size = 0;
+        return;
+    }
     
     // Initialize first free block
     heap_start = (block_header_t*)HEAP_START;
@@ -46,10 +57,9 @@ void kmalloc_init() {
 }
 
 void* kmalloc(size_t size) {
-    if (size == 0) return NULL;
+    if (size == 0 || !heap_start || size > UINT32_MAX - (KMALLOC_ALIGNMENT - 1)) return NULL;
     
-    // Align size to 4 bytes
-    size = (size + 3) & ~3;
+    size = (size + KMALLOC_ALIGNMENT - 1) & ~(size_t)(KMALLOC_ALIGNMENT - 1);
     
     block_header_t* current = heap_start;
     
@@ -79,9 +89,13 @@ void* kmalloc(size_t size) {
 }
 
 void kfree(void* ptr) {
-    if (!ptr) return;
+    if (!ptr || !heap_start) return;
     
-    block_header_t* block = (block_header_t*)((uint8_t*)ptr - sizeof(block_header_t));
+    block_header_t* block = heap_start;
+    while (block && (uint8_t*)block + sizeof(block_header_t) != (uint8_t*)ptr)
+        block = block->next;
+    if (!block || block->is_free) return;
+
     block->is_free = 1;
     
     // Coalesce with next block if it's free
@@ -105,6 +119,8 @@ void kfree(void* ptr) {
 }
 
 void kmalloc_get_stats(heap_stats_t* stats) {
+    if (!stats) return;
+
     stats->total_size = dynamic_heap_size;
     stats->used_size = 0;
     stats->free_size = 0;

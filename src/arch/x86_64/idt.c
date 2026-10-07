@@ -13,6 +13,7 @@ extern void idt_load(uint64_t ptr);
 extern void keyboard_asm_handler();
 extern void timer_asm_handler();
 extern void page_fault_asm_handler();
+extern void general_protection_asm_handler();
 extern void dummy_exception_handler();
 
 static inline uint64_t rdmsr(uint32_t msr) {
@@ -100,6 +101,7 @@ void init_idt() {
     init_ioapic();
     timer_init(100);
 
+    idt_set_gate(13, (uint64_t)general_protection_asm_handler, 0x08, 0x8E);
     idt_set_gate(14, (uint64_t)page_fault_asm_handler, 0x08, 0x8E);
     idt_set_gate(32, (uint64_t)timer_asm_handler, 0x08, 0x8E);
     idt_set_gate(33, (uint64_t)keyboard_asm_handler, 0x08, 0x8E);

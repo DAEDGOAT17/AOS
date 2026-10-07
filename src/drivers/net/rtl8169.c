@@ -25,6 +25,7 @@ static inline void flush_cache_line(volatile void *p) {
 
 // Track the memory mapped I/O base
 static uint8_t *mmio_base = 0;
+static int rtl8169_initialized;
 
 // Descriptor Rings — MUST be static BSS, NOT kmalloc'd!
 // kmalloc uses virtual 0x200000000 mapped to arbitrary physical pages.
@@ -310,13 +311,11 @@ err_t rtl8169_netif_init(struct netif *netif) {
     return ERR_OK;
 }
 
-void rtl8169_init(uint32_t bus, uint32_t device, uint32_t function) {
-    static int is_initialized = 0;
-    if (is_initialized) {
+int rtl8169_init(uint32_t bus, uint32_t device, uint32_t function) {
+    if (rtl8169_initialized) {
         print_string("RTL8169: Already initialized. Skipping to avoid lwIP crashes.\n");
-        return;
+        return 0;
     }
-    is_initialized = 1;
 
     print_string("RTL8169: Initializing hardware...\n");
 
@@ -370,7 +369,7 @@ void rtl8169_init(uint32_t bus, uint32_t device, uint32_t function) {
 
     if (!mmio_base) {
         print_string("RTL8169: FATAL - No MMIO BAR found! NIC unusable.\n");
-        return;
+        return -1;
     }
 
     // Step 1: Issue Software Reset FIRST to bring hardware to a known clean state.
@@ -491,4 +490,6 @@ void rtl8169_init(uint32_t bus, uint32_t device, uint32_t function) {
     // This is what prevents TCP retransmit backoff from ballooning to ~2 minutes.
     timer_set_net_ready();
     print_string("RTL8169: Timer-driven RX poll ACTIVE (10 ms interval).\n");
+    rtl8169_initialized = 1;
+    return 0;
 }

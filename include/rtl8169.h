@@ -36,7 +36,7 @@ typedef struct {
 } __attribute__((packed)) rtl_desc_t;
 
 // Standard Init Function
-void rtl8169_init(uint32_t bus, uint32_t device, uint32_t function);
+int rtl8169_init(uint32_t bus, uint32_t device, uint32_t function);
 void rtl8169_poll(void);
 void rtl8169_print_packet_parsed(uint8_t* data, int len);
 

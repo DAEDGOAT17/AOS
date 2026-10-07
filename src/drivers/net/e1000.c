@@ -153,8 +153,8 @@ void e1000_poll(void) {
     }
 }
 
-void e1000_init(uint32_t bus, uint32_t device, uint32_t function) {
-    if (initialized) return;
+int e1000_init(uint32_t bus, uint32_t device, uint32_t function) {
+    if (initialized) return 0;
 
     uint32_t command = pci_read_config_dword(bus, device, function, 0x04);
     pci_write_config_dword(bus, device, function, 0x04, command | 0x0006);
@@ -162,7 +162,7 @@ void e1000_init(uint32_t bus, uint32_t device, uint32_t function) {
     uint32_t bar_low = pci_read_config_dword(bus, device, function, 0x10);
     if (bar_low == 0 || bar_low == 0xFFFFFFFF || (bar_low & 0x01)) {
         print_string("E1000 ERROR: no memory-mapped BAR found.\n");
-        return;
+        return -1;
     }
 
     uint64_t mmio_base = (uint64_t)(bar_low & 0xFFFFFFF0);
@@ -239,7 +239,7 @@ void e1000_init(uint32_t bus, uint32_t device, uint32_t function) {
     if (!netif_add(&e1000_netif, &address, &netmask, &gateway, NULL,
                    e1000_netif_init, netif_input)) {
         print_string("E1000 ERROR: lwIP netif setup failed.\n");
-        return;
+        return -1;
     }
     e1000_netif.linkoutput = e1000_linkoutput;
     netif_set_default(&e1000_netif);
@@ -250,4 +250,5 @@ void e1000_init(uint32_t bus, uint32_t device, uint32_t function) {
     initialized = 1;
     timer_set_net_ready();
     print_string("E1000: DMA rings active; DHCP started.\n");
+    return 0;
 }

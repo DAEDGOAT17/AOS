@@ -14,12 +14,29 @@
 #include "ahci.h"
 #include "net_stack.h"
 #include "lwip/netif.h"
+#include "infer.h"
+#include "voice.h"
 
 char shell_buffer[256];
 int buffer_idx = 0;
+static char queued_shell_text[256];
+static int queued_shell_text_ready;
 const char* commands[] = {
-    "ls", "cd", "cat", "touch", "write", "rm", "mkdir", "rmdir", "clear", "echo", "help", "ps", "mem", "reboot", "sysinfo", "cpuid", "arch", "pci", "ahci", "ifconfig", "netstat", "ai", "ai_mock", "pktdump", "ping", "voice", "agent_ctx_set", "agent_ctx_get", "agent_plan", "agent_selfcheck", "agent_task", NULL
+    "ls", "cd", "cat", "touch", "write", "rm", "mkdir", "rmdir", "clear", "echo", "help", "ps", "mem", "reboot", "sysinfo", "cpuid", "arch", "pci", "ahci", "ifconfig", "netstat", "ai", "ai_mock", "pktdump", "ping", "voice", "infer", "agent_ctx_set", "agent_ctx_get", "agent_plan", "agent_selfcheck", "agent_task", NULL
 };
+
+void shell_queue_text(const char* text) {
+    if (!text || queued_shell_text_ready) return;
+    uint32_t index = 0;
+    while (text[index] && index < sizeof(queued_shell_text) - 1) {
+        char value = text[index];
+        queued_shell_text[index] =
+            value == '\n' || value == '\r' || value == '\t' ? ' ' : value;
+        index++;
+    }
+    queued_shell_text[index] = '\0';
+    queued_shell_text_ready = index > 0;
+}
 
 // Static variables for filename completion state
 static char tc_best_match[64];
@@ -548,7 +565,8 @@ void shell_execute(char* cmd) {
         print_string("- ifconfig     (Show lwIP initialized network interfaces)\n");
         print_string("- netstat      (Show network usage statistics)\n");
         print_string("- ping <ip>    (Send ICMP Echo Request)\n");
-        print_string("- voice status|meter|train|listen (Offline local voice commands)\n");
+        print_string("- voice type   (Whisper dictation into the shell prompt)\n");
+        print_string("- voice status|meter|train|listen|infer <prompt> (Offline local voice commands)\n");
         print_string("- ai <ip> <p>  (Send query to Autonomous Agent via Network)\n");
         print_string("- ai_mock      (Test Agentic intercept via fake Ollama payload)\n");
         print_string("- agent_task <goal> (Run bounded read-only AI task; configure endpoint with agent_ctx_set ai_ip <ip>)\n");
@@ -676,20 +694,42 @@ void shell_execute(char* cmd) {
         extern void hda_mic_stop(void);
         extern uint32_t hda_mic_read(int16_t* samples, uint32_t capacity);
         extern uint32_t hda_mic_dropped(void);
-        if (arg) {
-            char* separator = strstr(arg, " ");
-            if (separator) {
-                *separator = '\0';
-                char* label = separator + 1;
-                while (*label == ' ') label++;
-                if (strcmp(arg, "train") == 0 && *label) {
-                    voice_train(label);
-                    return;
-                }
+
+        if (arg && strncmp(arg, "train ", 6) == 0) {
+            char* label = arg + 6;
+            while (*label == ' ') label++;
+            if (*label) {
+                voice_train(label);
+                return;
             }
         }
         if (arg && strcmp(arg, "listen") == 0) {
             voice_listen();
+            return;
+        }
+        if (arg && strcmp(arg, "type") == 0) {
+            voice_type();
+            return;
+        }
+        if (arg && strncmp(arg, "infer ", 6) == 0) {
+            char* prompt = arg + 6;
+            while (*prompt == ' ') prompt++;
+            if (*prompt) {
+                infer_result_t decision;
+                if (infer_execute_prompt(prompt, &decision) == 0) {
+                    print_string("Voice infer: ");
+                    print_string(prompt);
+                    print_string(" => ");
+                    print_string(infer_action_name(decision.action));
+                    print_string("\n");
+                    return;
+                }
+            }
+            print_string("Usage: voice infer <prompt>\n");
+            return;
+        }
+        if (arg && strcmp(arg, "infer") == 0) {
+            print_string("Usage: voice infer <prompt>\n");
             return;
         }
         if (!arg || strcmp(arg, "status") == 0) {
@@ -697,7 +737,7 @@ void shell_execute(char* cmd) {
             return;
         }
         if (strcmp(arg, "meter") != 0) {
-            print_string("Usage: voice [status|meter]\n");
+            print_string("Usage: voice [type|status|meter|train <label>|listen|infer <prompt>]\n");
             return;
         }
         if (!hda_mic_start()) {
@@ -740,6 +780,24 @@ void shell_execute(char* cmd) {
         kprint_dec(timer_get_ticks() - start_tick);
         print_string(" dropped: ");
         kprint_dec(hda_mic_dropped());
+        print_string("\n");
+        return;
+    }
+    else if (strcmp(cmd, "infer") == 0) {
+        if (!arg) {
+            print_string("Usage: infer <prompt>\n");
+            return;
+        }
+        infer_result_t result;
+        infer_decide(arg, &result);
+        print_string("Inference: action=");
+        print_string(infer_action_name(result.action));
+        print_string(" confidence=");
+        kprint_dec((uint32_t)(result.confidence * 100.0f));
+        print_string("% safe=");
+        print_string(result.safe ? "yes" : "no");
+        print_string(" reason=");
+        print_string(result.reason);
         print_string("\n");
         return;
     }
@@ -845,6 +903,13 @@ void shell_input(char c) {
         print_string("] $ ");
         reset_text_color();
         buffer_idx = 0;
+        shell_buffer[0] = '\0';
+        if (queued_shell_text_ready) {
+            queued_shell_text_ready = 0;
+            for (uint32_t index = 0; queued_shell_text[index] && buffer_idx < 255; index++)
+                shell_input(queued_shell_text[index]);
+            queued_shell_text[0] = '\0';
+        }
         return;
     }
 

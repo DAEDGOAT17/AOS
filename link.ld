@@ -22,6 +22,12 @@ SECTIONS
         *(.rodata)
     }
 
+    .ksymtab : ALIGN(8) {
+        __start_ksymtab = .;
+        KEEP(*(.ksymtab))
+        __stop_ksymtab = .;
+    }
+
     .data : ALIGN(4K) {
         *(.data)
     }
