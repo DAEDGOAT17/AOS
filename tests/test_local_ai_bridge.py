@@ -31,8 +31,18 @@ class HarvisLocalAIBridgeTests(unittest.TestCase):
         self.assertIn("System prompt", response["response"])
 
     def test_parse_model_name_falls_back_cleanly(self):
-        self.assertEqual(mod.resolve_model_name(""), "harvis-local")
-        self.assertEqual(mod.resolve_model_name("  "), "harvis-local")
+        self.assertEqual(mod.resolve_model_name(""), "gemma3:4b")
+        self.assertEqual(mod.resolve_model_name("  "), "gemma3:4b")
+
+    def test_local_os_context_is_loaded_and_local_only(self):
+        self.assertIsNotNone(mod)
+        context = mod.load_local_os_context()
+        self.assertIn("local-only", context.lower())
+        self.assertIn("not cloud-hosted", context.lower())
+
+        payload = {"model": "harvis-local", "prompt": "status"}
+        response = mod.build_response(payload)
+        self.assertIn("local", response["response"].lower())
 
 
 if __name__ == "__main__":

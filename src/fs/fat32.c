@@ -353,6 +353,18 @@ int fat32_mount(uint32_t lba_start) {
 
 int fat32_is_mounted(void) { return mounted; }
 
+void fat32_get_label(char* buf) {
+    int length = 11;
+    if (!buf) return;
+    if (!mounted) {
+        buf[0] = '\0';
+        return;
+    }
+    memcpy(buf, bpb.volume_label, 11);
+    while (length > 0 && buf[length - 1] == ' ') length--;
+    buf[length] = '\0';
+}
+
 int fat32_list_dir(uint32_t cluster, fat32_dir_callback_t cb) {
     if (!mounted) return -1;
     if (cluster == 0) cluster = fat32_cwd_cluster;

@@ -4,6 +4,8 @@
 #include "string.h"
 #include "pmm.h"
 #include "fat32.h"
+#include "ahci.h"
+#include "gpt.h"
 
 // Drive parameters (populated via IDENTIFY or ramdisk)
 static uint32_t total_sectors = 0;
@@ -14,6 +16,9 @@ static uint8_t active_drive_sel = 0xE0; // Default to Master
 static int      ramdisk_mode = 0;
 static uint8_t* ramdisk_ptr  = 0;
 static uint32_t partition_offset = 0;
+static int ahci_mode = 0;
+static uint8_t ahci_probe_sector[ATA_SECTOR_SIZE] __attribute__((aligned(512)));
+static uint8_t ahci_gpt_entries[128 * 128] __attribute__((aligned(512)));
 
 // Helper: wait for drive to not be busy
 static void ata_wait_bsy() {
@@ -94,6 +99,75 @@ static int is_fat32_bpb(uint8_t* sector) {
     return 1;
 }
 
+static int ata_find_ahci_fat32_partition(void) {
+    if (ahci_read_sectors(0, 1, ahci_probe_sector) != 0) return 0;
+
+    if (is_fat32_bpb(ahci_probe_sector)) {
+        partition_offset = 0;
+        print_string("ATA: AHCI raw FAT32 volume selected.\n");
+        return 1;
+    }
+
+    if (ahci_probe_sector[510] == 0x55 && ahci_probe_sector[511] == 0xAA) {
+        for (int index = 0; index < 4; index++) {
+            uint8_t *entry = &ahci_probe_sector[446 + index * 16];
+            uint8_t type = entry[4];
+            uint32_t start_lba;
+            if (type != 0x0B && type != 0x0C) continue;
+            start_lba = *(uint32_t *)&entry[8];
+            if (start_lba >= total_sectors ||
+                ahci_read_sectors(start_lba, 1, ahci_probe_sector) != 0 ||
+                !is_fat32_bpb(ahci_probe_sector)) continue;
+            partition_offset = start_lba;
+            print_string("ATA: AHCI MBR FAT32 partition selected at LBA ");
+            kprint_dec(start_lba);
+            print_char('\n');
+            return 1;
+        }
+    }
+
+    if (ahci_read_sectors(1, 1, ahci_probe_sector) == 0) {
+        gpt_header_t *header = (gpt_header_t *)ahci_probe_sector;
+        uint32_t entry_count;
+        uint32_t entry_size;
+        uint32_t entry_bytes;
+        uint32_t entry_sectors;
+
+        if (header->signature != 0x5452415020494645ULL ||
+            header->header_size < sizeof(gpt_header_t) ||
+            header->header_size > ATA_SECTOR_SIZE ||
+            header->partition_entry_lba > UINT32_MAX) return 0;
+
+        entry_count = header->num_partition_entries;
+        entry_size = header->size_of_partition_entry;
+        if (entry_count == 0U || entry_count > 128U || entry_size != sizeof(gpt_entry_t)) return 0;
+        entry_bytes = entry_count * entry_size;
+        entry_sectors = (entry_bytes + ATA_SECTOR_SIZE - 1U) / ATA_SECTOR_SIZE;
+        if (entry_sectors == 0U || entry_sectors > 32U ||
+            header->partition_entry_lba + entry_sectors > total_sectors ||
+            ahci_read_sectors((uint32_t)header->partition_entry_lba,
+                              (uint8_t)entry_sectors, ahci_gpt_entries) != 0) return 0;
+
+        gpt_entry_t *entries = (gpt_entry_t *)ahci_gpt_entries;
+        for (uint32_t index = 0; index < entry_count; index++) {
+            uint64_t start = entries[index].starting_lba;
+            uint64_t end = entries[index].ending_lba;
+            if (entries[index].partition_type_guid.data1 == 0U &&
+                entries[index].partition_type_guid.data2 == 0U) continue;
+            if (start > UINT32_MAX || start >= total_sectors || end < start) continue;
+            if (ahci_read_sectors((uint32_t)start, 1, ahci_probe_sector) != 0 ||
+                !is_fat32_bpb(ahci_probe_sector)) continue;
+            partition_offset = (uint32_t)start;
+            print_string("ATA: AHCI GPT FAT32 partition selected at LBA ");
+            kprint_dec(partition_offset);
+            print_char('\n');
+            return 1;
+        }
+    }
+
+    return 0;
+}
+
 int ata_init(void) {
     print_string("ATA: Detecting storage...\n");
     partition_offset = 0;
@@ -137,6 +211,16 @@ int ata_init(void) {
         print_string("ATA: Legacy drive found but no valid FAT32 partition detected.\n");
     }
 
+    // Use AHCI only when an existing FAT32 volume is found; never format or repartition.
+    if (ahci_init_storage(&total_sectors) == 0) {
+        ahci_mode = 1;
+        drive_present = 1;
+        if (ata_find_ahci_fat32_partition()) return 0;
+        drive_present = 0;
+        ahci_mode = 0;
+        print_string("ATA: AHCI disk found, but no existing FAT32 partition was selected.\n");
+    }
+
     // ── 2. Fallback: Embedded Ramdisk ───────────────────────────────────────
     if (ramdisk_loaded) {
         ramdisk_mode  = 1;
@@ -163,6 +247,10 @@ int ata_is_ramdisk(void) {
     return ramdisk_mode;
 }
 
+int ata_is_ahci(void) {
+    return ahci_mode;
+}
+
 int ata_read_sectors(uint32_t lba, uint8_t count, void* buffer) {
     if (!drive_present) return -1;
 
@@ -174,6 +262,8 @@ int ata_read_sectors(uint32_t lba, uint8_t count, void* buffer) {
         memcpy(buffer, ramdisk_ptr + offset, (uint32_t)length);
         return 0;
     }
+
+    if (ahci_mode) return ahci_read_sectors(lba, count, buffer);
 
     // ── Legacy ATA PIO path ──────────────────────────────────────────────────
     outb(active_base_port + ATA_REG_HDDEVSEL, active_drive_sel | ((lba >> 24) & 0x0F));
@@ -207,6 +297,8 @@ int ata_write_sectors(uint32_t lba, uint8_t count, const void* buffer) {
         return 0;
     }
 
+    if (ahci_mode) return ahci_write_sectors(lba, count, buffer);
+
     // ── Legacy ATA PIO path ──────────────────────────────────────────────────
     outb(active_base_port + ATA_REG_HDDEVSEL, active_drive_sel | ((lba >> 24) & 0x0F));
     outb(active_base_port + ATA_REG_FEATURES, 0x00);
@@ -229,6 +321,12 @@ int ata_write_sectors(uint32_t lba, uint8_t count, const void* buffer) {
     outb(active_base_port + ATA_REG_COMMAND, 0xE7);
     ata_wait_bsy();
     return 0;
+}
+
+int ata_flush_cache(void) {
+    if (!drive_present) return -1;
+    if (ramdisk_mode || !ahci_mode) return 0;
+    return ahci_flush_cache();
 }
 
 uint32_t ata_get_sector_count(void) {

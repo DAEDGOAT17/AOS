@@ -217,6 +217,6 @@ void agent_task(const char* instruction) {
     agent_ctx_set("task_status", "running");
 
     if (agent_read_text("ai_ip", ai_ip, sizeof(ai_ip)) <= 0)
-        strcpy(ai_ip, "172.16.100.1");
+        strcpy(ai_ip, "192.168.77.1");
     ollama_agent_request(ai_ip, instruction);
 }

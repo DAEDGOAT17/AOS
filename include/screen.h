@@ -1,6 +1,7 @@
 #ifndef SCREEN_H
 #define SCREEN_H
 
+#include <stddef.h>
 #include <stdint.h>
 
 /* VGA color attribute nibbles (fg | bg<<4) */
@@ -37,5 +38,6 @@ void screen_init_fb(uint64_t addr, uint32_t width, uint32_t height, uint32_t pit
 extern int cursor;
 void scroll_up();
 void scroll_down();
+size_t screen_copy_current_view(char *buffer, size_t capacity);
 
 #endif

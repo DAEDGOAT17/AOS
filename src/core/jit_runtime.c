@@ -93,6 +93,7 @@ static int jit_resolve_symbol_refs(const char *source_code) {
         "vmm_map_page",
         "vmm_alloc_exec_pages",
         "aos_apply_network_setup",
+        "shell_install_runtime_command",
         "inb",
         "outb"
     };
@@ -277,7 +278,8 @@ static int jit_parse_string_call(const char *source_code,
     static const char *output_symbols[] = {
         "serial_write_string",
         "print_string",
-        "aos_apply_network_setup"
+        "aos_apply_network_setup",
+        "shell_install_runtime_command"
     };
     const char *entry;
     const char *body;
@@ -534,7 +536,8 @@ int jit_runtime_exec_driver(const char *source_code, const char *entry_name, jit
                                     4096,
                                     (uintptr_t)literal_ptr,
                                     return_value,
-                                    strcmp(call_symbol, "aos_apply_network_setup") == 0,
+                                    strcmp(call_symbol, "aos_apply_network_setup") == 0 ||
+                                        strcmp(call_symbol, "shell_install_runtime_command") == 0,
                                     &target_patch_offset)) {
                 print_string("JIT: call stub generation failed\n");
                 return -8;
@@ -573,6 +576,9 @@ int jit_runtime_exec_driver(const char *source_code, const char *entry_name, jit
 
     if (has_call && strcmp(call_symbol, "aos_apply_network_setup") == 0 && return_value != 0) {
         return -10;
+    }
+    if (has_call && strcmp(call_symbol, "shell_install_runtime_command") == 0 && return_value != 0) {
+        return -11;
     }
 
     return 0;

@@ -16,14 +16,142 @@
 #include "lwip/netif.h"
 #include "infer.h"
 #include "voice.h"
+#include "agent.h"
 
 char shell_buffer[256];
 int buffer_idx = 0;
+#define SHELL_HISTORY_SIZE 16
+static char shell_history[SHELL_HISTORY_SIZE][256];
+static int shell_history_count;
+static int shell_history_position;
 static char queued_shell_text[256];
 static int queued_shell_text_ready;
 const char* commands[] = {
-    "ls", "cd", "cat", "touch", "write", "rm", "mkdir", "rmdir", "clear", "echo", "help", "ps", "mem", "reboot", "sysinfo", "cpuid", "arch", "pci", "ahci", "ifconfig", "netstat", "ai", "ai_mock", "pktdump", "ping", "voice", "infer", "agent_ctx_set", "agent_ctx_get", "agent_plan", "agent_selfcheck", "agent_task", NULL
+    "ls", "cd", "cat", "touch", "write", "rm", "mkdir", "rmdir", "clear", "echo", "pwd", "uptime", "diskinfo", "agentreport", "help", "ps", "mem", "reboot", "sysinfo", "cpuid", "arch", "pci", "ahci", "ifconfig", "netstat", "ai", "ai_mock", "pktdump", "ping", "voice", "infer", "agent_ctx_set", "agent_ctx_get", "agent_plan", "agent_selfcheck", "agent_task", NULL
 };
+
+typedef struct {
+    const char *command;
+    const char *program;
+    const char *path;
+} shell_runtime_program_t;
+
+static const shell_runtime_program_t shell_runtime_programs[] = {
+    {"pwd", "pwd:print_current_directory", "/agent/db/PWDPROG.TXT"},
+    {"uptime", "uptime:print_system_uptime", "/agent/db/UPTIME.TXT"},
+    {"diskinfo", "diskinfo:print_storage_status", "/agent/db/DISKINFO.TXT"},
+    {"agentreport", "agentreport:print_saved_agent_report", "/agent/db/AGENTRP.TXT"}
+};
+
+static const shell_runtime_program_t *shell_runtime_find_command(const char *command) {
+    for (size_t index = 0; index < sizeof(shell_runtime_programs) / sizeof(shell_runtime_programs[0]); index++) {
+        if (strcmp(command, shell_runtime_programs[index].command) == 0)
+            return &shell_runtime_programs[index];
+    }
+    return NULL;
+}
+
+static const shell_runtime_program_t *shell_runtime_find_program(const char *program) {
+    for (size_t index = 0; index < sizeof(shell_runtime_programs) / sizeof(shell_runtime_programs[0]); index++) {
+        if (strcmp(program, shell_runtime_programs[index].program) == 0)
+            return &shell_runtime_programs[index];
+    }
+    return NULL;
+}
+
+static int shell_runtime_program_installed(const char *command) {
+    const shell_runtime_program_t *definition = shell_runtime_find_command(command);
+    char stored_program[64];
+    int fd;
+    int bytes;
+    if (!definition) return 0;
+    fd = fat32_open(definition->path, 'r');
+    if (fd < 0) return 0;
+    bytes = fat32_read(fd, stored_program, sizeof(stored_program) - 1);
+    fat32_close(fd);
+    if (bytes < 0) return 0;
+    stored_program[bytes] = '\0';
+    return strcmp(stored_program, definition->program) == 0;
+}
+
+static void shell_runtime_print_command(const char *command) {
+    if (strcmp(command, "pwd") == 0) {
+        fat32_print_cwd();
+        print_char('\n');
+    } else if (strcmp(command, "uptime") == 0) {
+        uint32_t hours, minutes, seconds;
+        timer_get_uptime(&hours, &minutes, &seconds);
+        print_string("Uptime: ");
+        kprint_dec(hours);
+        print_string("h ");
+        kprint_dec(minutes);
+        print_string("m ");
+        kprint_dec(seconds);
+        print_string("s\n");
+    } else if (strcmp(command, "diskinfo") == 0) {
+        char label[13];
+        print_string("Storage: ");
+        if (ata_is_ramdisk()) print_string("embedded RAM disk (volatile)\n");
+        else if (ata_is_ahci()) print_string("AHCI physical disk\n");
+        else print_string("legacy ATA physical disk\n");
+        print_string("Sectors: ");
+        kprint_dec(ata_get_sector_count());
+        print_string("\nFAT32 label: ");
+        fat32_get_label(label);
+        print_string(label);
+        print_char('\n');
+    } else if (strcmp(command, "agentreport") == 0) {
+        print_string("Persisted agent report\nTask:\n");
+        agent_ctx_get("task_last");
+        print_string("Status:\n");
+        agent_ctx_get("task_status");
+        print_string("Result:\n");
+        agent_ctx_get("task_last_result");
+        print_string("Last observation:\n");
+        agent_ctx_get("task_observation");
+    }
+}
+
+int shell_install_runtime_command(const char *program) {
+    const shell_runtime_program_t *definition = program ? shell_runtime_find_program(program) : NULL;
+    char readback[64];
+    int fd;
+    int bytes;
+    if (!definition || !fat32_is_mounted()) {
+        print_string("Runtime command rejected: unsupported program.\n");
+        return -1;
+    }
+    fd = fat32_open(definition->path, 'w');
+    if (fd < 0 || fat32_write(fd, definition->program, strlen(definition->program)) != (int)strlen(definition->program)) {
+        if (fd >= 0) fat32_close(fd);
+        print_string("Runtime command install failed: FAT32 write error.\n");
+        return -1;
+    }
+    fat32_close(fd);
+    if (!ata_is_ramdisk() && ata_flush_cache() != 0) {
+        print_string("Runtime command install failed: disk cache flush failed.\n");
+        return -1;
+    }
+    fd = fat32_open(definition->path, 'r');
+    if (fd < 0) {
+        print_string("Runtime command install failed: readback open failed.\n");
+        return -1;
+    }
+    bytes = fat32_read(fd, readback, sizeof(readback) - 1);
+    fat32_close(fd);
+    if (bytes < 0) return -1;
+    readback[bytes] = '\0';
+    if (strcmp(readback, definition->program) != 0) {
+        print_string("Runtime command install failed: readback mismatch.\n");
+        return -1;
+    }
+    if (ata_is_ramdisk()) {
+        print_string("Runtime program installed on volatile RAM disk; not reboot-persistent.\n");
+    } else {
+        print_string("Runtime program installed and verified on persistent FAT32.\n");
+    }
+    return 0;
+}
 
 void shell_queue_text(const char* text) {
     if (!text || queued_shell_text_ready) return;
@@ -36,6 +164,41 @@ void shell_queue_text(const char* text) {
     }
     queued_shell_text[index] = '\0';
     queued_shell_text_ready = index > 0;
+}
+
+static void shell_history_add(const char* command) {
+    if (!command || !*command) return;
+    if (shell_history_count > 0 &&
+        strcmp(shell_history[shell_history_count - 1], command) == 0) {
+        shell_history_position = shell_history_count;
+        return;
+    }
+
+    if (shell_history_count == SHELL_HISTORY_SIZE) {
+        for (int index = 1; index < SHELL_HISTORY_SIZE; index++) {
+            strcpy(shell_history[index - 1], shell_history[index]);
+        }
+        shell_history_count--;
+    }
+
+    strcpy(shell_history[shell_history_count++], command);
+    shell_history_position = shell_history_count;
+}
+
+static void shell_history_show(int position) {
+    while (buffer_idx > 0) {
+        print_char('\b');
+        buffer_idx--;
+    }
+    shell_buffer[0] = '\0';
+
+    if (position < shell_history_count) {
+        strcpy(shell_buffer, shell_history[position]);
+        buffer_idx = strlen(shell_buffer);
+        for (int index = 0; index < buffer_idx; index++) {
+            print_char(shell_buffer[index]);
+        }
+    }
 }
 
 // Static variables for filename completion state
@@ -460,6 +623,31 @@ void shell_execute(char* cmd) {
         }
         return;
     }
+    else if (strcmp(cmd, "pwd") == 0) {
+        if (arg) {
+            print_string("Usage: pwd\n");
+        } else if (!shell_runtime_program_installed("pwd")) {
+            print_string("pwd is not installed. Install it through the AOS runtime JIT first.\n");
+        } else {
+            shell_runtime_print_command(cmd);
+        }
+        return;
+    }
+    else if (strcmp(cmd, "uptime") == 0 || strcmp(cmd, "diskinfo") == 0 ||
+             strcmp(cmd, "agentreport") == 0) {
+        if (arg) {
+            print_string("Usage: ");
+            print_string(cmd);
+            print_char('\n');
+        } else if (!shell_runtime_program_installed(cmd)) {
+            print_string("Runtime command not installed: ");
+            print_string(cmd);
+            print_string("\n");
+        } else {
+            shell_runtime_print_command(cmd);
+        }
+        return;
+    }
     else if (strcmp(cmd, "cat") == 0) {
         if (!arg) { print_string("Usage: cat <file>\n"); return; }
         int fd = fat32_open(arg, 'r');
@@ -545,35 +733,55 @@ void shell_execute(char* cmd) {
         return;
     }
     else if (strcmp(cmd, "help") == 0) {
-        print_string("Available commands:\n");
-        print_string("- ls [path]    (List files)\n");
-        print_string("- cd <path>    (Change directory)\n");
-        print_string("- cat <file>   (Show file contents)\n");
-        print_string("- touch <file> (Create empty file)\n");
-        print_string("- write <f> <t>(Write text to file)\n");
-        print_string("- rm <file>    (Remove file)\n");
-        print_string("- mkdir <dir>  (Create directory)\n");
-        print_string("- rmdir <dir>  (Remove directory)\n");
-        print_string("- clear        (Clear screen)\n");
-        print_string("- ps           (List processes)\n");
-        print_string("- mem          (Show memory statistics)\n");
-        print_string("- sysinfo      (Full system information)\n");
-        print_string("- cpuid        (Raw CPU identity report)\n");
-        print_string("- arch         (Confirm CPU architecture)\n");
-        print_string("- pci <class>  (Scan PCI bus: storage, network, audio)\n");
-        print_string("- ahci         (Scan for AHCI Storage Controllers)\n");
-        print_string("- ifconfig     (Show lwIP initialized network interfaces)\n");
-        print_string("- netstat      (Show network usage statistics)\n");
-        print_string("- ping <ip>    (Send ICMP Echo Request)\n");
-        print_string("- voice type   (Whisper dictation into the shell prompt)\n");
-        print_string("- voice status|meter|train|listen|infer <prompt> (Offline local voice commands)\n");
-        print_string("- ai <ip> <p>  (Send query to Autonomous Agent via Network)\n");
-        print_string("- ai_mock      (Test Agentic intercept via fake Ollama payload)\n");
-        print_string("- agent_task <goal> (Run bounded read-only AI task; configure endpoint with agent_ctx_set ai_ip <ip>)\n");
-        print_string("- agent_plan <instruction> (Persist a bounded self-improvement plan)\n");
-        print_string("- agent_selfcheck (Mark task complete or needs_review based on persisted state)\n");
-        print_string("- pktdump [on|off] (Hex dump of last packet, or toggle live stream)\n");
-        print_string("- reboot       (Restart system)\n\n");
+        print_string("AOS shell commands (arguments in <> are required; [] are optional):\n\n");
+        print_string("FILES AND PROMPT\n");
+        print_string("  ls [path]                  List files in the current directory or path\n");
+        print_string("  cd <path>                  Change the current directory\n");
+        print_string("  cat <file>                 Display a file\n");
+        print_string("  touch <file>               Create an empty file\n");
+        print_string("  write <file> <text>        Replace a file's contents with text\n");
+        print_string("  rm <file>                  Remove a file\n");
+        print_string("  mkdir <dir>                Create a directory\n");
+        print_string("  rmdir <dir>                Remove a directory\n");
+        print_string("  echo <text>                Print text; echo with no text prints a blank line\n");
+        print_string("  pwd                        Show current path (enabled by runtime install)\n");
+        print_string("  uptime                     Show uptime (runtime install)\n");
+        print_string("  diskinfo                   Show storage backend and FAT32 volume (runtime install)\n");
+        print_string("  agentreport                Show persisted agent task evidence (runtime install)\n");
+        print_string("  clear                      Clear the screen\n");
+        print_string("  help                       Show this command list\n\n");
+        print_string("SYSTEM AND HARDWARE\n");
+        print_string("  sysinfo                    Show system information\n");
+        print_string("  arch                       Show CPU architecture status\n");
+        print_string("  cpuid                      Show CPU identification details\n");
+        print_string("  mem                        Show physical memory and heap usage\n");
+        print_string("  ps                         List tasks\n");
+        print_string("  pci <storage|network|audio> Scan PCI devices by class\n");
+        print_string("  ahci                       Scan/init the AHCI controller\n");
+        print_string("  reboot                     Restart AOS (destructive)\n\n");
+        print_string("NETWORK\n");
+        print_string("  ifconfig                   Show network interfaces and addresses\n");
+        print_string("  netstat                    Show network statistics\n");
+        print_string("  ping <ip>                  Send an ICMP echo request\n");
+        print_string("  ai <ip> <prompt>           Send a prompt to an Ollama server\n");
+        print_string("  pktdump [on|off]           Show last packet; optionally toggle live dump\n\n");
+        print_string("AI, AGENT, AND VOICE\n");
+        print_string("  infer <prompt>             Classify a prompt with the local inference engine\n");
+        print_string("  ai_mock                    Test the AI command intercept\n");
+        print_string("  agent_task <instruction>   Start a bounded read-only agent task\n");
+        print_string("  agent_plan <instruction>   Save a bounded self-improvement plan\n");
+        print_string("  agent_selfcheck            Check saved agent task status\n");
+        print_string("  agent_complete             Mark the current agent task complete\n");
+        print_string("  agent_ctx_get <key>        Read an agent context value\n");
+        print_string("  agent_ctx_set <key> <value> Set an agent context value\n");
+        print_string("  voice                      Show microphone status\n");
+        print_string("  voice status               Show microphone status\n");
+        print_string("  voice type                 Dictate into the shell prompt\n");
+        print_string("  voice meter                Capture microphone level for one second\n");
+        print_string("  voice train <label>        Train a voice command label\n");
+        print_string("  voice listen               Listen for a voice command\n");
+        print_string("  voice infer <prompt>       Classify a spoken-command prompt\n");
+        print_string("\nCaution: rm, rmdir, write, and reboot can change or remove data.\n\n");
         return;
     }
     else if (strcmp(cmd, "ps") == 0) {
@@ -870,6 +1078,22 @@ void shell_execute(char* cmd) {
 
 //shell input function
 void shell_input(char c) {
+    if (c == SHELL_KEY_UP) {
+        if (shell_history_position > 0) {
+            shell_history_position--;
+            shell_history_show(shell_history_position);
+        }
+        return;
+    }
+
+    if (c == SHELL_KEY_DOWN) {
+        if (shell_history_position < shell_history_count) {
+            shell_history_position++;
+            shell_history_show(shell_history_position);
+        }
+        return;
+    }
+
     if (c == 0x03) { // Ctrl + C (ASCII ETX)
         set_text_color(MAKE_COLOR(COLOR_LIGHT_RED, COLOR_BLACK));
         print_string("^C\n");
@@ -880,6 +1104,7 @@ void shell_input(char c) {
         // Reset any live streams
         extern int rtl8169_live_pktdump;
         rtl8169_live_pktdump = 0;
+        shell_history_position = shell_history_count;
 
         set_text_color(MAKE_COLOR(COLOR_LIGHT_GREEN, COLOR_BLACK));
         print_string("JARVIS [");
@@ -893,6 +1118,7 @@ void shell_input(char c) {
 
     if (c == '\n') {
         shell_buffer[buffer_idx] = '\0';
+        shell_history_add(shell_buffer);
         print_char('\n');
         shell_execute(shell_buffer);
         set_text_color(MAKE_COLOR(COLOR_LIGHT_GREEN, COLOR_BLACK));

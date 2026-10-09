@@ -340,6 +340,45 @@ char* screen_get_capture() {
     return agent_capture_buf;
 }
 
+size_t screen_copy_current_view(char *buffer, size_t capacity) {
+    size_t written = 0;
+    int end_history_total = total_lines_stored - scroll_offset;
+    int start_history_total = end_history_total - (VISIBLE_ROWS - 1);
+    int first_line;
+    int copied_lines = 0;
+
+    if (!buffer || capacity == 0) return 0;
+    if (start_history_total < 0) start_history_total = 0;
+    first_line = end_history_total - 23;
+    if (first_line < start_history_total) first_line = start_history_total;
+
+    for (int line_index = first_line;
+         line_index <= end_history_total && copied_lines < 24;
+         line_index++, copied_lines++) {
+        int circular_index = line_index % MAX_HISTORY;
+        int line_length = SCREEN_COLS - 1;
+
+        while (line_length > 0 &&
+               (history_buffer[circular_index][line_length - 1] & 0xFF) == ' ') {
+            line_length--;
+        }
+
+        for (int column = 0; column < line_length; column++) {
+            unsigned char character = history_buffer[circular_index][column] & 0xFF;
+            if (written + 1 >= capacity) goto finished;
+            if (character < 32 || character > 126) character = '?';
+            buffer[written++] = (char)character;
+        }
+
+        if (written + 1 >= capacity) goto finished;
+        buffer[written++] = '\n';
+    }
+
+finished:
+    buffer[written] = '\0';
+    return written;
+}
+
 void print_char(char c) {
     if (agent_capture_active && agent_capture_idx < 2047) {
         agent_capture_buf[agent_capture_idx++] = c;

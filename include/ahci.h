@@ -38,13 +38,19 @@ typedef volatile struct {
     uint32_t em_ctl;    // Enclosure management control
     uint32_t cap2;      // Host capabilities extended
     uint32_t bohc;      // BIOS/OS handoff control and status
-    uint8_t  rsv[0x74]; // Reserved
+    uint8_t  rsv[0x74]; // Reserved through offset 0x9F
     uint8_t  vendor[0x60]; // Vendor specific registers
     ahci_port_t ports[32]; // Port control registers
 } __attribute__((packed)) ahci_hba_t;
 
 // Initialize the AHCI controller given its PCI Base Address (ABAR)
 void ahci_init(uint32_t abar);
+
+// Initialize an AHCI disk discovered on PCI and expose bounded sector I/O.
+int ahci_init_storage(uint32_t *sector_count);
+int ahci_read_sectors(uint32_t lba, uint8_t count, void *buffer);
+int ahci_write_sectors(uint32_t lba, uint8_t count, const void *buffer);
+int ahci_flush_cache(void);
 
 // Attempt to detect AHCI capabilities on the PCI bus
 void pci_init_ahci();

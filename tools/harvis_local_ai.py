@@ -19,21 +19,55 @@ from typing import Any, Dict, Optional
 
 DEFAULT_HOST = os.environ.get("HARVIS_AI_HOST", "127.0.0.1")
 DEFAULT_PORT = int(os.environ.get("HARVIS_AI_PORT", "11434"))
-DEFAULT_MODEL = os.environ.get("HARVIS_MODEL", "harvis-local")
+DEFAULT_MODEL = os.environ.get("HARVIS_MODEL", "gemma3:4b")
 OLLAMA_BIN = os.environ.get("OLLAMA_BIN", "ollama")
 FORCE_FALLBACK = os.environ.get("HARVIS_AI_FORCE_FALLBACK", "").lower() in {
     "1", "true", "yes", "on"
 }
+CONTEXT_PATH = os.environ.get(
+    "HARVIS_OS_CONTEXT_PATH",
+    os.path.join(os.path.dirname(os.path.dirname(__file__)), "agent_db", "local_os_context.md"),
+)
+
+LOCAL_OS_CONTEXT = """You are the local AI controller for AOS, a bare-metal x86_64 operating system.
+
+Important constraints:
+- This runtime is local to the host machine and is not cloud-hosted.
+- The model is connected to the OS shell, not to an external server.
+- Return only safe, minimal commands appropriate for a small bare-metal OS.
+- Prefer simple shell-compatible actions such as ls, sysinfo, help, cat, ps, pwd, and status.
+- Do not claim internet access, cloud execution, or remote hosting.
+- If the request is ambiguous, ask for a single missing fact before taking a dangerous action.
+- Treat the OS as a minimal environment: stable, local, bounded, and command-driven.
+
+You are here to help the OS operator manage the local machine with bounded, safe commands.
+"""
 
 
 def resolve_model_name(raw_name: Optional[str]) -> str:
     cleaned = (raw_name or "").strip()
-    return cleaned or DEFAULT_MODEL
+    if cleaned:
+        return cleaned
+    return DEFAULT_MODEL
+
+
+def load_local_os_context(path: Optional[str] = None) -> str:
+    target = path or CONTEXT_PATH
+    try:
+        if target and os.path.exists(target):
+            with open(target, "r", encoding="utf-8") as handle:
+                text = handle.read().strip()
+                if text:
+                    return text
+    except OSError:
+        pass
+    return LOCAL_OS_CONTEXT
 
 
 def build_response(payload: Dict[str, Any]) -> Dict[str, Any]:
     model_name = resolve_model_name(payload.get("model"))
-    system_prompt = str(payload.get("system") or "JARVIS local mode")
+    context_text = load_local_os_context()
+    system_prompt = str(payload.get("system") or context_text)
     prompt_text = str(payload.get("prompt") or "status")
 
     prompt_lower = prompt_text.lower()

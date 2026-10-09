@@ -50,6 +50,7 @@ uint32_t ata_get_partition_offset(void);
 
 // Returns 1 if we are using the internal ramdisk, 0 if using a real drive
 int ata_is_ramdisk(void);
+int ata_is_ahci(void);
 
 // Read 'count' sectors starting at LBA 'lba' into buffer
 // Returns 0 on success, -1 on error
@@ -58,6 +59,9 @@ int ata_read_sectors(uint32_t lba, uint8_t count, void* buffer);
 // Write 'count' sectors starting at LBA 'lba' from buffer
 // Returns 0 on success, -1 on error
 int ata_write_sectors(uint32_t lba, uint8_t count, const void* buffer);
+
+// Flush volatile device write caches before reporting a persistent install.
+int ata_flush_cache(void);
 
 // Get total sector count of the drive (from IDENTIFY data)
 uint32_t ata_get_sector_count(void);

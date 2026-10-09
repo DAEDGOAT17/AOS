@@ -8,6 +8,7 @@
 static bool shift_pressed = false;
 static bool ctrl_pressed = false;
 static bool caps_lock = false;
+static bool extended_scancode = false;
 
 unsigned char kbd_us[128] = {
     0,  27, '1', '2', '3', '4', '5', '6', '7', '8', '9', '0', '-', '=', '\b',
@@ -44,6 +45,25 @@ char kbd_get() {
 
 void keyboard_handler() {
     uint8_t scancode = inb(0x60);
+
+    if (scancode == 0xE0) {
+        extended_scancode = true;
+        apic_eoi();
+        return;
+    }
+
+    if (extended_scancode) {
+        extended_scancode = false;
+        if (!(scancode & 0x80)) {
+            if (scancode == 0x48) {
+                kbd_put(SHELL_KEY_UP);
+            } else if (scancode == 0x50) {
+                kbd_put(SHELL_KEY_DOWN);
+            }
+        }
+        apic_eoi();
+        return;
+    }
 
     if (scancode & 0x80) {
         uint8_t released = scancode & 0x7F;

@@ -23,10 +23,11 @@
 extern void shell_execute(char* cmd);
 
 // ------------------------------------------------------------------
-// Use a lightweight local model that is realistic for a laptop-sized
-// install and easy to pull without requiring a huge host dependency.
+// Local model target for a modern RTX 5050-class laptop.
+// Gemma 3 4B is a better fit than a 1B model for bounded OS commanding,
+// while still remaining practical on 8 GB VRAM systems.
 // ------------------------------------------------------------------
-#define OLLAMA_MODEL "gemma3:1b"
+#define OLLAMA_MODEL "gemma3:4b"
 
 static char global_prompt[8192];
 static char global_ip_str[32];

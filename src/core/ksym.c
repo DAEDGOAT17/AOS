@@ -17,6 +17,7 @@ extern void* vmm_alloc_exec_pages(uint32_t num_pages);
 extern void print_string(const char* str);
 extern void serial_write_string(const char *str);
 extern int aos_apply_network_setup(const char *request);
+extern int shell_install_runtime_command(const char *name);
 
 EXPORT_SYMBOL(ksym_lookup);
 EXPORT_SYMBOL(kmalloc_init);
@@ -29,6 +30,7 @@ EXPORT_SYMBOL(vmm_alloc_exec_pages);
 EXPORT_SYMBOL(print_string);
 EXPORT_SYMBOL(serial_write_string);
 EXPORT_SYMBOL(aos_apply_network_setup);
+EXPORT_SYMBOL(shell_install_runtime_command);
 
 uintptr_t ksym_lookup(const char *name) {
     if (!name) {
