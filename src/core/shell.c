@@ -3,6 +3,7 @@
 #include "io.h"
 #include <stdbool.h>
 #include "shell.h"
+#include "core/lisp.h"
 #include "kmalloc.h"
 #include "task.h"
 #include "timer.h"
@@ -16,7 +17,6 @@
 #include "lwip/netif.h"
 #include "infer.h"
 #include "voice.h"
-#include "agent.h"
 
 char shell_buffer[256];
 int buffer_idx = 0;
@@ -26,103 +26,63 @@ static int shell_history_count;
 static int shell_history_position;
 static char queued_shell_text[256];
 static int queued_shell_text_ready;
+static char queued_lisp_app[9];
+static int queued_lisp_app_ready;
+static char queued_lisp_expression[3001];
+static int queued_lisp_expression_ready;
 const char* commands[] = {
-    "ls", "cd", "cat", "touch", "write", "rm", "mkdir", "rmdir", "clear", "echo", "pwd", "uptime", "diskinfo", "agentreport", "help", "ps", "mem", "reboot", "sysinfo", "cpuid", "arch", "pci", "ahci", "ifconfig", "netstat", "ai", "ai_mock", "pktdump", "ping", "voice", "infer", "agent_ctx_set", "agent_ctx_get", "agent_plan", "agent_selfcheck", "agent_task", NULL
+    "ls", "cd", "cat", "touch", "write", "rm", "mkdir", "rmdir", "clear", "echo", "pwd", "uptime", "diskinfo", "agentreport", "lisp", "help", "ps", "mem", "reboot", "sysinfo", "cpuid", "arch", "pci", "ahci", "ifconfig", "netstat", "ai", "ai_mock", "pktdump", "ping", "voice", "infer", "agent_ctx_set", "agent_ctx_get", "agent_plan", "agent_selfcheck", "agent_task", NULL
 };
 
 typedef struct {
-    const char *command;
-    const char *program;
-    const char *path;
+    const char* command;
+    const char* source;
+    const char* path;
 } shell_runtime_program_t;
 
 static const shell_runtime_program_t shell_runtime_programs[] = {
-    {"pwd", "pwd:print_current_directory", "/agent/db/PWDPROG.TXT"},
-    {"uptime", "uptime:print_system_uptime", "/agent/db/UPTIME.TXT"},
-    {"diskinfo", "diskinfo:print_storage_status", "/agent/db/DISKINFO.TXT"},
-    {"agentreport", "agentreport:print_saved_agent_report", "/agent/db/AGENTRP.TXT"}
+    { "pwd", "pwd:print_current_directory", "/agent/db/runtime_pwd.txt" },
+    { "uptime", "uptime:show_uptime", "/agent/db/rtup.txt" },
+    { "diskinfo", "diskinfo:show_disk_info", "/agent/db/rtdisk.txt" },
+    { "agentreport", "agentreport:show_agent_report", "/agent/db/rtagent.txt" }
 };
 
-static const shell_runtime_program_t *shell_runtime_find_command(const char *command) {
-    for (size_t index = 0; index < sizeof(shell_runtime_programs) / sizeof(shell_runtime_programs[0]); index++) {
-        if (strcmp(command, shell_runtime_programs[index].command) == 0)
-            return &shell_runtime_programs[index];
+static const shell_runtime_program_t* shell_runtime_find_source(const char* source) {
+    for (uint32_t index = 0; index < sizeof(shell_runtime_programs) / sizeof(shell_runtime_programs[0]); index++) {
+        if (strcmp(source, shell_runtime_programs[index].source) == 0) return &shell_runtime_programs[index];
     }
     return NULL;
 }
 
-static const shell_runtime_program_t *shell_runtime_find_program(const char *program) {
-    for (size_t index = 0; index < sizeof(shell_runtime_programs) / sizeof(shell_runtime_programs[0]); index++) {
-        if (strcmp(program, shell_runtime_programs[index].program) == 0)
-            return &shell_runtime_programs[index];
+static const shell_runtime_program_t* shell_runtime_find_command(const char* command) {
+    for (uint32_t index = 0; index < sizeof(shell_runtime_programs) / sizeof(shell_runtime_programs[0]); index++) {
+        if (strcmp(command, shell_runtime_programs[index].command) == 0) return &shell_runtime_programs[index];
     }
     return NULL;
 }
 
-static int shell_runtime_program_installed(const char *command) {
-    const shell_runtime_program_t *definition = shell_runtime_find_command(command);
-    char stored_program[64];
-    int fd;
-    int bytes;
-    if (!definition) return 0;
-    fd = fat32_open(definition->path, 'r');
+static int shell_runtime_program_installed(const char* command) {
+    const shell_runtime_program_t* runtime_program = shell_runtime_find_command(command);
+    char program[64];
+    if (!runtime_program) return 0;
+    int fd = fat32_open(runtime_program->path, 'r');
     if (fd < 0) return 0;
-    bytes = fat32_read(fd, stored_program, sizeof(stored_program) - 1);
+    int bytes = fat32_read(fd, program, sizeof(program) - 1);
     fat32_close(fd);
     if (bytes < 0) return 0;
-    stored_program[bytes] = '\0';
-    return strcmp(stored_program, definition->program) == 0;
-}
-
-static void shell_runtime_print_command(const char *command) {
-    if (strcmp(command, "pwd") == 0) {
-        fat32_print_cwd();
-        print_char('\n');
-    } else if (strcmp(command, "uptime") == 0) {
-        uint32_t hours, minutes, seconds;
-        timer_get_uptime(&hours, &minutes, &seconds);
-        print_string("Uptime: ");
-        kprint_dec(hours);
-        print_string("h ");
-        kprint_dec(minutes);
-        print_string("m ");
-        kprint_dec(seconds);
-        print_string("s\n");
-    } else if (strcmp(command, "diskinfo") == 0) {
-        char label[13];
-        print_string("Storage: ");
-        if (ata_is_ramdisk()) print_string("embedded RAM disk (volatile)\n");
-        else if (ata_is_ahci()) print_string("AHCI physical disk\n");
-        else print_string("legacy ATA physical disk\n");
-        print_string("Sectors: ");
-        kprint_dec(ata_get_sector_count());
-        print_string("\nFAT32 label: ");
-        fat32_get_label(label);
-        print_string(label);
-        print_char('\n');
-    } else if (strcmp(command, "agentreport") == 0) {
-        print_string("Persisted agent report\nTask:\n");
-        agent_ctx_get("task_last");
-        print_string("Status:\n");
-        agent_ctx_get("task_status");
-        print_string("Result:\n");
-        agent_ctx_get("task_last_result");
-        print_string("Last observation:\n");
-        agent_ctx_get("task_observation");
-    }
+    program[bytes] = '\0';
+    return strcmp(program, runtime_program->source) == 0;
 }
 
 int shell_install_runtime_command(const char *program) {
-    const shell_runtime_program_t *definition = program ? shell_runtime_find_program(program) : NULL;
-    char readback[64];
+    const shell_runtime_program_t* runtime_program;
     int fd;
-    int bytes;
-    if (!definition || !fat32_is_mounted()) {
+    if (!program || !(runtime_program = shell_runtime_find_source(program)) || !fat32_is_mounted()) {
         print_string("Runtime command rejected: unsupported program.\n");
         return -1;
     }
-    fd = fat32_open(definition->path, 'w');
-    if (fd < 0 || fat32_write(fd, definition->program, strlen(definition->program)) != (int)strlen(definition->program)) {
+    fd = fat32_open(runtime_program->path, 'w');
+    if (fd < 0 || fat32_write(fd, runtime_program->source, strlen(runtime_program->source)) != (int)strlen(runtime_program->source)) {
         if (fd >= 0) fat32_close(fd);
         print_string("Runtime command install failed: FAT32 write error.\n");
         return -1;
@@ -132,25 +92,190 @@ int shell_install_runtime_command(const char *program) {
         print_string("Runtime command install failed: disk cache flush failed.\n");
         return -1;
     }
-    fd = fat32_open(definition->path, 'r');
-    if (fd < 0) {
-        print_string("Runtime command install failed: readback open failed.\n");
-        return -1;
-    }
-    bytes = fat32_read(fd, readback, sizeof(readback) - 1);
-    fat32_close(fd);
-    if (bytes < 0) return -1;
-    readback[bytes] = '\0';
-    if (strcmp(readback, definition->program) != 0) {
-        print_string("Runtime command install failed: readback mismatch.\n");
-        return -1;
-    }
     if (ata_is_ramdisk()) {
-        print_string("Runtime program installed on volatile RAM disk; not reboot-persistent.\n");
+        print_string("Runtime program installed: ");
+        print_string(runtime_program->source);
+        print_string(" (volatile RAM disk; not reboot-persistent).\n");
     } else {
-        print_string("Runtime program installed and verified on persistent FAT32.\n");
+        print_string("Runtime program installed: ");
+        print_string(runtime_program->source);
+        print_string(" (saved on persistent FAT32 storage).\n");
     }
     return 0;
+}
+
+static int shell_lisp_command_name_valid(const char* name) {
+    uint32_t length = strlen(name);
+    if (length == 0 || length > 8 || name[0] < 'a' || name[0] > 'z') return 0;
+    for (uint32_t index = 0; index < length; index++) {
+        char value = name[index];
+        if (!((value >= 'a' && value <= 'z') || (value >= '0' && value <= '9'))) return 0;
+    }
+    for (uint32_t index = 0; commands[index]; index++) {
+        if (strcmp(name, commands[index]) == 0) return 0;
+    }
+    return shell_runtime_find_command(name) == NULL;
+}
+
+static void shell_lisp_command_path(const char* name, char* path) {
+    strcpy(path, "/agent/lisp/");
+    strcat(path, name);
+    strcat(path, ".lsp");
+}
+
+int shell_install_lisp_command(const char* definition) {
+    char name[9];
+    char path[32];
+    const char* separator;
+    uint32_t name_length;
+    uint32_t source_length;
+    int fd;
+
+    if (!definition || !fat32_is_mounted() || strlen(definition) > 3010) {
+        print_string("Lisp command rejected: missing definition or FAT32 mount.\n");
+        return -1;
+    }
+    separator = strchr(definition, '\n');
+    if (!separator) {
+        print_string("Lisp command rejected: expected name followed by newline and expression.\n");
+        return -1;
+    }
+    name_length = (uint32_t)(separator - definition);
+    if (name_length == 0 || name_length >= sizeof(name)) {
+        print_string("Lisp command rejected: command name must be 1-8 lowercase letters/digits.\n");
+        return -1;
+    }
+    memcpy(name, definition, name_length);
+    name[name_length] = '\0';
+    if (!shell_lisp_command_name_valid(name) || !aos_lisp_validate(separator + 1)) {
+        print_string("Lisp command rejected: name conflicts or expression is outside the Lisp subset.\n");
+        return -1;
+    }
+
+    source_length = strlen(separator + 1);
+    if (source_length == 0 || source_length > 3000) return -1;
+    fat32_mkdir("/agent");
+    fat32_mkdir("/agent/lisp");
+    shell_lisp_command_path(name, path);
+    fd = fat32_open(path, 'w');
+    if (fd < 0 || fat32_write(fd, separator + 1, source_length) != (int)source_length) {
+        if (fd >= 0) fat32_close(fd);
+        print_string("Lisp command install failed: FAT32 write error.\n");
+        return -1;
+    }
+    fat32_close(fd);
+    if (!ata_is_ramdisk() && ata_flush_cache() != 0) {
+        print_string("Lisp command install failed: storage flush failed.\n");
+        return -1;
+    }
+    print_string("Lisp command installed: ");
+    print_string(name);
+    print_string(ata_is_ramdisk() ? " (volatile RAM disk).\n" : " (saved on persistent FAT32 storage).\n");
+    return 0;
+}
+
+static int shell_execute_lisp_command(const char* command, const char* argument) {
+    char path[32];
+    char source[3001];
+    if (!shell_lisp_command_name_valid(command)) return 0;
+    shell_lisp_command_path(command, path);
+    int fd = fat32_open(path, 'r');
+    if (fd < 0) return 0;
+    uint32_t size = fat32_get_size(fd);
+    if (size == 0 || size >= sizeof(source)) {
+        fat32_close(fd);
+        print_string("Saved Lisp command rejected: invalid size.\n");
+        return 1;
+    }
+    int bytes = fat32_read(fd, source, sizeof(source) - 1);
+    fat32_close(fd);
+    if (bytes <= 0) {
+        print_string("Saved Lisp command could not be read.\n");
+        return 1;
+    }
+    source[bytes] = '\0';
+    if (!aos_lisp_validate(source)) {
+        print_string("Saved Lisp command rejected: invalid expression.\n");
+        return 1;
+    }
+    aos_lisp_execute(source, argument);
+    return 1;
+}
+
+int shell_queue_lisp_app(const char* name) {
+    if (queued_lisp_app_ready || !name || !shell_lisp_command_name_valid(name)) return -1;
+    strcpy(queued_lisp_app, name);
+    queued_lisp_app_ready = 1;
+    return 0;
+}
+
+int shell_queue_lisp_expression(const char* expression) {
+    if (queued_lisp_expression_ready || !expression || strlen(expression) > 3000 ||
+        !aos_lisp_validate(expression)) return -1;
+    strcpy(queued_lisp_expression, expression);
+    queued_lisp_expression_ready = 1;
+    return 0;
+}
+
+static void shell_runtime_print_agent_file(const char* heading, const char* path) {
+    char buffer[257];
+    uint32_t total = 0;
+    char last_character = '\0';
+    int fd;
+    print_string(heading);
+    print_string(":\n");
+    fd = fat32_open(path, 'r');
+    if (fd < 0) {
+        print_string("  (not saved)\n");
+        return;
+    }
+    int bytes;
+    while ((bytes = fat32_read(fd, buffer, sizeof(buffer) - 1)) > 0) {
+        buffer[bytes] = '\0';
+        print_string(buffer);
+        total += (uint32_t)bytes;
+        last_character = buffer[bytes - 1];
+    }
+    fat32_close(fd);
+    if (total == 0) print_string("  (empty)\n");
+    else if (last_character != '\n') print_char('\n');
+}
+
+static void cmd_uptime(void) {
+    uint32_t hours, minutes, seconds;
+    timer_get_uptime(&hours, &minutes, &seconds);
+    print_string("Uptime: ");
+    kprint_dec(hours);
+    print_string("h ");
+    kprint_dec(minutes);
+    print_string("m ");
+    kprint_dec(seconds);
+    print_string("s\n");
+}
+
+static void cmd_diskinfo(void) {
+    char label[13];
+    if (!fat32_is_mounted()) {
+        print_string("Disk info unavailable: FAT32 is not mounted.\n");
+        return;
+    }
+    fat32_get_label(label);
+    print_string("Storage: ");
+    if (ata_is_ramdisk()) print_string("RAM-backed\n");
+    else if (ata_is_ahci()) print_string("AHCI\n");
+    else print_string("ATA/IDE PIO\n");
+    print_string("Sectors: ");
+    kprint_dec(ata_get_sector_count());
+    print_string("\nFAT32 volume label: ");
+    print_string(label[0] ? label : "(none)");
+    print_char('\n');
+}
+
+static void cmd_agentreport(void) {
+    shell_runtime_print_agent_file("Saved task", "/agent/db/task.txt");
+    shell_runtime_print_agent_file("Plan", "/agent/db/plan.txt");
+    shell_runtime_print_agent_file("Last result", "/agent/db/result.txt");
+    shell_runtime_print_agent_file("Observation", "/agent/db/observe.txt");
 }
 
 void shell_queue_text(const char* text) {
@@ -629,22 +754,45 @@ void shell_execute(char* cmd) {
         } else if (!shell_runtime_program_installed("pwd")) {
             print_string("pwd is not installed. Install it through the AOS runtime JIT first.\n");
         } else {
-            shell_runtime_print_command(cmd);
+            fat32_print_cwd();
+            print_char('\n');
         }
         return;
     }
-    else if (strcmp(cmd, "uptime") == 0 || strcmp(cmd, "diskinfo") == 0 ||
-             strcmp(cmd, "agentreport") == 0) {
-        if (arg) {
-            print_string("Usage: ");
-            print_string(cmd);
-            print_char('\n');
-        } else if (!shell_runtime_program_installed(cmd)) {
-            print_string("Runtime command not installed: ");
-            print_string(cmd);
-            print_string("\n");
+    else if (strcmp(cmd, "uptime") == 0) {
+        if (arg) print_string("Usage: uptime\n");
+        else if (!shell_runtime_program_installed("uptime")) {
+            print_string("uptime is not installed. Install it through the AOS runtime JIT first.\n");
         } else {
-            shell_runtime_print_command(cmd);
+            cmd_uptime();
+        }
+        return;
+    }
+    else if (strcmp(cmd, "diskinfo") == 0) {
+        if (arg) print_string("Usage: diskinfo\n");
+        else if (!shell_runtime_program_installed("diskinfo")) {
+            print_string("diskinfo is not installed. Install it through the AOS runtime JIT first.\n");
+        } else {
+            cmd_diskinfo();
+        }
+        return;
+    }
+    else if (strcmp(cmd, "agentreport") == 0) {
+        if (arg) print_string("Usage: agentreport\n");
+        else if (!shell_runtime_program_installed("agentreport")) {
+            print_string("agentreport is not installed. Install it through the AOS runtime JIT first.\n");
+        } else {
+            cmd_agentreport();
+        }
+        return;
+    }
+    else if (strcmp(cmd, "lisp") == 0) {
+        if (!arg) {
+            print_string("Usage: lisp <expression>\n");
+        } else if (!aos_lisp_validate(arg)) {
+            print_string("Lisp expression rejected: unsupported form or invalid syntax.\n");
+        } else {
+            aos_lisp_execute(arg, "");
         }
         return;
     }
@@ -745,9 +893,10 @@ void shell_execute(char* cmd) {
         print_string("  rmdir <dir>                Remove a directory\n");
         print_string("  echo <text>                Print text; echo with no text prints a blank line\n");
         print_string("  pwd                        Show current path (enabled by runtime install)\n");
-        print_string("  uptime                     Show uptime (runtime install)\n");
-        print_string("  diskinfo                   Show storage backend and FAT32 volume (runtime install)\n");
-        print_string("  agentreport                Show persisted agent task evidence (runtime install)\n");
+        print_string("  uptime                     Show uptime (enabled by runtime install)\n");
+        print_string("  diskinfo                   Show storage type, sectors, and FAT32 label\n");
+        print_string("  agentreport                Show saved agent task audit (runtime install)\n");
+        print_string("  lisp <expression>          Evaluate a bounded Lisp expression\n");
         print_string("  clear                      Clear the screen\n");
         print_string("  help                       Show this command list\n\n");
         print_string("SYSTEM AND HARDWARE\n");
@@ -1072,7 +1221,9 @@ void shell_execute(char* cmd) {
         return;
     }
     else {
-        print_string("Unknown command. Type 'help' for assistance.\n");
+        if (!shell_execute_lisp_command(cmd, arg)) {
+            print_string("Unknown command. Type 'help' for assistance.\n");
+        }
     }
 }
 
@@ -1263,6 +1414,28 @@ void shell_task(void) {
         print_string("] $ ");
         reset_text_color();
         welcomed = true;
+    }
+
+    if (queued_lisp_app_ready) {
+        char app_name[sizeof(queued_lisp_app)];
+        strcpy(app_name, queued_lisp_app);
+        queued_lisp_app[0] = '\0';
+        queued_lisp_app_ready = 0;
+        shell_execute(app_name);
+        print_string("\nJARVIS [");
+        fat32_print_cwd();
+        print_string("] $ ");
+        return;
+    }
+
+    if (queued_lisp_expression_ready) {
+        queued_lisp_expression_ready = 0;
+        aos_lisp_execute(queued_lisp_expression, "");
+        queued_lisp_expression[0] = '\0';
+        print_string("\nJARVIS [");
+        fat32_print_cwd();
+        print_string("] $ ");
+        return;
     }
 
     // Process background networking hardware loops are now handled by the

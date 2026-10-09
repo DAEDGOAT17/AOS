@@ -303,6 +303,12 @@ void clear_screen() {
     update_cursor();
 }
 
+void screen_show_text(const char* text) {
+    if (!text) return;
+    clear_screen();
+    print_string(text);
+}
+
 void scroll_up() {
     int max_scroll = total_lines_stored - (VISIBLE_ROWS - 1);
     if (max_scroll < 0) max_scroll = 0;

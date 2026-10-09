@@ -75,7 +75,7 @@ typedef struct __attribute__((packed)) {
 #define FAT32_BAD           0x0FFFFFF7
 
 // Max path/name lengths
-#define FAT32_MAX_FILENAME  13    // 8 + '.' + 3 + null
+#define FAT32_MAX_FILENAME  12    // 8 + '.' + 3 + null
 #define FAT32_MAX_PATH      256
 
 // File handle

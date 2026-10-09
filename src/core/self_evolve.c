@@ -1,5 +1,6 @@
 #include "core/self_evolve.h"
 #include "core/jit_engine.h"
+#include "shell.h"
 #include "drivers/serial.h"
 #include "screen.h"
 #include "string.h"
@@ -17,10 +18,10 @@ extern char *screen_get_capture(void);
 #define SELF_EVOLVE_PORT  9000U
 #define SELF_EVOLVE_CMD_PORT 9001U
 
-static char self_evolve_buffer[4096];
-static char self_evolve_payload[4096];
-static char self_evolve_serial_buffer[4096];
-static char self_evolve_serial_payload[4096];
+static char self_evolve_buffer[8192];
+static char self_evolve_payload[8192];
+static char self_evolve_serial_buffer[8192];
+static char self_evolve_serial_payload[8192];
 static char self_evolve_screen_snapshot[8192];
 static size_t self_evolve_len;
 static size_t self_evolve_serial_len;
@@ -296,6 +297,28 @@ static void self_evolve_exec_remote_command(const char *cmd) {
         const char *reject = "REMOTE COMMAND REJECTED: destructive action blocked.\n";
         if (self_evolve_cmd_active_client != NULL) {
             tcp_write(self_evolve_cmd_active_client, reject, (u16_t)strlen(reject), TCP_WRITE_FLAG_COPY);
+            tcp_output(self_evolve_cmd_active_client);
+        }
+        return;
+    }
+
+    if (strncmp(trimmed, "runapp ", 7) == 0) {
+        const char *response = shell_queue_lisp_app(trimmed + 7) == 0 ?
+            "Lisp application queued for the shell task.\n" :
+            "Lisp application could not be queued.\n";
+        if (self_evolve_cmd_active_client != NULL) {
+            tcp_write(self_evolve_cmd_active_client, response, (u16_t)strlen(response), TCP_WRITE_FLAG_COPY);
+            tcp_output(self_evolve_cmd_active_client);
+        }
+        return;
+    }
+
+    if (strncmp(trimmed, "lisp ", 5) == 0) {
+        const char *response = shell_queue_lisp_expression(trimmed + 5) == 0 ?
+            "Lisp expression queued for the shell task.\n" :
+            "Lisp expression rejected or queue busy.\n";
+        if (self_evolve_cmd_active_client != NULL) {
+            tcp_write(self_evolve_cmd_active_client, response, (u16_t)strlen(response), TCP_WRITE_FLAG_COPY);
             tcp_output(self_evolve_cmd_active_client);
         }
         return;

@@ -26,6 +26,7 @@
 #define MAKE_COLOR(fg, bg)  (((bg) << 4) | (fg))
 
 void clear_screen();
+void screen_show_text(const char* text);
 void print_char(char c);
 void print_string(const char* str);
 void print_color_string(const char* str, uint8_t attr);

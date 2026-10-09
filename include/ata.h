@@ -50,6 +50,8 @@ uint32_t ata_get_partition_offset(void);
 
 // Returns 1 if we are using the internal ramdisk, 0 if using a real drive
 int ata_is_ramdisk(void);
+
+// Returns 1 if storage I/O is using the AHCI driver, 0 otherwise
 int ata_is_ahci(void);
 
 // Read 'count' sectors starting at LBA 'lba' into buffer

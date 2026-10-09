@@ -449,7 +449,7 @@ int fat32_open(const char* path, char mode) {
     uint32_t target_cluster = fat32_resolve_path(path);
     uint32_t parent_cluster = 0;
     char parent_path[FAT32_MAX_PATH];
-    char filename[FAT32_MAX_FILENAME];
+    char filename[FAT32_MAX_PATH];
     const char* target_filename = path;
 
     // Resolve the parent directory for nested paths first.
