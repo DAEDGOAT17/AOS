@@ -302,10 +302,10 @@ gdt_set_gate_tss(5, &tss_entry);
 
 ## Related Components
 
-- [IDT - Interrupt Descriptor Table](../interrupt_io/idt.md)
-- [Long Mode Transition](long_mode.md)
-- [Virtual Memory Management](../memory/vmm.md)
-- [Kernel Initialization](../core_systems/kernel_init.md)
+- [IDT - Interrupt Descriptor Table](../interrupt_io/idt.html)
+- [Long Mode Transition](long_mode.html)
+- [Virtual Memory Management](../memory/vmm.html)
+- [Kernel Initialization](../core_systems/kernel_init.html)
 
 ---
 

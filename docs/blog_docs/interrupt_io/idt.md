@@ -439,10 +439,10 @@ static inline void restore_interrupts(uint64_t flags) {
 
 ## Related Components
 
-- [APIC/IO-APIC Interrupt Controller](apic.md)
-- [Timer Subsystem](timer.md)
-- [Global Descriptor Table (GDT)](../architecture/gdt.md)
-- [Keyboard Driver](../drivers/keyboard_driver.md)
+- [APIC/IO-APIC Interrupt Controller](apic.html)
+- [Timer Subsystem](timer.html)
+- [Global Descriptor Table (GDT)](../architecture/gdt.html)
+- [Keyboard Driver](../drivers/keyboard_driver.html)
 
 ---
 

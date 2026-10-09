@@ -11,6 +11,7 @@
 
 #include "net_stack.h"
 #include "agent.h"
+#include "core/lisp.h"
 #include "screen.h"
 #include "string.h"
 #include "lwip/tcp.h"
@@ -33,20 +34,66 @@ static char global_prompt[8192];
 static char global_ip_str[32];
 static int agent_loop_active = 0;
 static int agent_action_count = 0;
+static char agent_pending_verify_path[128];
 #define AGENT_MAX_ACTIONS 4
 
-// Keep model-proposed commands inside a narrow, read-only tool boundary.
+// The kernel owns execution; file changes are confined to /agent/work.
 #define SYSTEM_PROMPT                                                           \
     "You are JARVIS for Jarvis OS. For a prompt marked [AGENT TASK], follow the goal using the tool protocol below. Otherwise answer normally without tools.\\n" \
-    "Agent tools are read-only: ls [path], cat <file>, sysinfo, ps, mem, cpuid, arch.\\n" \
-    "Use at most four successful tools, one per response, formatted exactly as <EXEC_CMD:tool>. Never use shell chaining, writes, deletes, networking, reboot, or other commands.\\n" \
+    "OS tools: apps, runapp <saved-name>, ls [path], cat <file>, sysinfo, ps, mem, cpuid, arch, validated Lisp via lisp <expression>, and write /agent/work/<filename> <one-line text>.\\n" \
+    "MANDATORY: the first tool call for every [AGENT TASK] is exactly <EXEC_CMD:apps>. Inspect that list. If a saved app matches the goal, the next tool call is <EXEC_CMD:runapp name>; inspect its actual output and reuse it instead of regenerating code. Only create new Lisp when no saved app fits.\\n" \
+    "When the user asks you to write, run, or demonstrate code, generate a program in AOS Lisp and execute it with the lisp tool. The expression is evaluated by the OS kernel's bounded Lisp runtime; inspect its output before reporting. Do not merely save code unless the user asks for a file.\\n" \
+    "A tool call contains the complete command after EXEC_CMD colon and before its single final >. Correct example: <EXEC_CMD:lisp (print \"hello from AOS\")>. Never close the tag after only the tool name or put the expression after the tag.\\n" \
+    "Supported Lisp forms include begin, if, print, concat, arithmetic and comparisons, var, set!, while, uptime, diskinfo, canvas, cell, draw, key, wait, memory-get/set, tool-save/read/run, and kernel-stub.\\n" \
+    "Use memory-get/set with a short key for persistent notes. Save reusable validated AOS Lisp tools with tool-save, inspect with tool-read, and execute with tool-run. Tool names are 1-8 letters/digits/underscore/hyphen; source text is at most 255 bytes and stored as /agent/lisp/<name>.lsp (FAT32 8.3).\\n" \
+    "kernel-stub only accepts the existing JIT's narrow driver_init subset: one print_string or shell_install_lisp_command action. It does not compile or execute arbitrary C. Never claim general kernel source was changed.\\n" \
+    "Lisp is bounded by the in-OS evaluator. Avoid literal > in Lisp tool expressions because it closes the tool tag; rewrite a > b as (< b a), and a >= b as (not (< a b)).\\n" \
+    "Writes may only create or replace a direct child file of /agent/work. After every write, use cat on that exact path before stopping. Never write elsewhere or use shell chaining, deletes, networking, reboot, or other commands.\\n" \
+    "Use at most four successful tools, one per response, formatted exactly as <EXEC_CMD:tool>. The OS enforces the command allowlist and write boundary.\\n" \
     "Inspect each actual tool output before deciding the next action. When the goal is satisfied, output <EXEC_CMD:stop>. If it cannot be safely completed, output <EXEC_CMD:stop>; the OS will request review if there is no successful evidence.\\n" \
     "Do not claim an action succeeded unless its output confirms it."
 
 #define CHAT_SYSTEM_PROMPT \
     "You are JARVIS for Jarvis OS. Answer the user directly in plain text. Do not output JSON, markdown fences, or tool commands."
 
-static int agent_readonly_command(const char* command) {
+static int agent_workspace_write_path(const char* command, char* path, int capacity) {
+    const char* cursor = command;
+    while (*cursor && *cursor != ' ') cursor++;
+    if (*cursor != ' ') return 0;
+    cursor++;
+
+    static const char prefix[] = "/agent/work/";
+    for (int index = 0; prefix[index]; index++) {
+        if (cursor[index] != prefix[index]) return 0;
+    }
+    cursor += sizeof(prefix) - 1;
+
+    const char* filename = cursor;
+    int filename_length = 0;
+    while (*cursor && *cursor != ' ') {
+        char value = *cursor++;
+        if (!((value >= 'a' && value <= 'z') ||
+              (value >= 'A' && value <= 'Z') ||
+              (value >= '0' && value <= '9') || value == '_' ||
+              value == '-' || value == '.')) return 0;
+        filename_length++;
+    }
+    if (filename_length == 0 ||
+        filename_length >= 128 - (int)(sizeof(prefix) - 1) ||
+        (filename_length == 1 && filename[0] == '.') ||
+        (filename_length == 2 && filename[0] == '.' && filename[1] == '.') ||
+        *cursor != ' ' || cursor[1] == '\0') return 0;
+
+    if (path) {
+        int path_length = (int)(cursor - command - 6);
+        if (path_length <= 0 || path_length >= capacity) return 0;
+        memcpy(path, command + 6, (size_t)path_length);
+        path[path_length] = '\0';
+    }
+    return 1;
+}
+
+static int agent_command_allowed(const char* command) {
     const char* arg = command;
     while (*arg && *arg != ' ') arg++;
     int verb_len = (int)(arg - command);
@@ -58,6 +105,25 @@ static int agent_readonly_command(const char* command) {
     if (*arg == ' ') {
         arg++;
         if (*arg == '\0' || *arg == ' ') return 0;
+    }
+
+    if (strcmp(verb, "write") == 0)
+        return agent_workspace_write_path(command, NULL, 0);
+    if (strcmp(verb, "lisp") == 0)
+        return arg && aos_lisp_validate(arg);
+    if (strcmp(verb, "apps") == 0)
+        return *arg == '\0';
+    if (strcmp(verb, "runapp") == 0) {
+        int app_length = 0;
+        if (!arg || *arg == '\0') return 0;
+        while (arg[app_length]) {
+            char value = arg[app_length++];
+            if (!((value >= 'a' && value <= 'z') ||
+                  (value >= 'A' && value <= 'Z') ||
+                  (value >= '0' && value <= '9'))) return 0;
+            if (app_length > 8) return 0;
+        }
+        return app_length > 0;
     }
 
     int takes_path = strcmp(verb, "ls") == 0 || strcmp(verb, "cat") == 0;
@@ -86,14 +152,23 @@ static int agent_tool_failed(const char* output) {
            strstr(output, "Failed") != NULL;
 }
 
+static int agent_is_verified_readback(const char* command) {
+    if (!agent_pending_verify_path[0] || strncmp(command, "cat ", 4) != 0)
+        return 0;
+    return strcmp(command + 4, agent_pending_verify_path) == 0;
+}
+
 static void ollama_handle_agent_command(const char* command) {
     if (strcmp(command, "stop") == 0 || strcmp(command, "done") == 0) {
-        if (agent_loop_active && agent_action_count > 0) {
-            char summary[] = "Completed after successful read-only actions; output stored in agent DB.";
+        if (agent_loop_active && agent_pending_verify_path[0]) {
+            agent_task_failed("Agent stopped before reading back its workspace file.");
+            print_string("\n[JARVIS Agent stopped; workspace write needs verification]\n");
+        } else if (agent_loop_active && agent_action_count > 0) {
+            char summary[] = "Agent stopped after successful OS actions; outputs are recorded in the agent DB.";
             agent_task_result(summary);
             print_string("\n[JARVIS Agent completed with observed action evidence]\n");
         } else if (agent_loop_active) {
-            agent_task_failed("Agent stopped without a successful read-only action.");
+            agent_task_failed("Agent stopped without a successful OS action.");
             print_string("\n[JARVIS Agent stopped; task needs review]\n");
         } else {
             print_string("\n[JARVIS] Tool execution rejected outside agent_task.\n");
@@ -102,10 +177,10 @@ static void ollama_handle_agent_command(const char* command) {
         return;
     }
 
-    if (!agent_loop_active || !agent_readonly_command(command)) {
+    if (!agent_loop_active || !agent_command_allowed(command)) {
         print_string("\n[JARVIS] Rejected unsafe or out-of-task tool command.\n");
         if (agent_loop_active) {
-            agent_task_failed("Agent requested a command outside the read-only tool allowlist.");
+            agent_task_failed("Agent requested a command outside the OS tool allowlist or workspace policy.");
             agent_loop_active = 0;
         }
         return;
@@ -136,10 +211,21 @@ static void ollama_handle_agent_command(const char* command) {
 
     char* output = screen_get_capture();
     if (agent_tool_failed(output)) {
-        agent_task_failed("A read-only tool did not produce successful output.");
+        agent_task_failed("An OS tool did not produce successful output.");
         agent_loop_active = 0;
         print_string("\n[JARVIS] Tool failed; task needs review.\n");
         return;
+    }
+
+    if (strncmp(command, "write ", 6) == 0) {
+        if (!agent_workspace_write_path(command, agent_pending_verify_path,
+                                        sizeof(agent_pending_verify_path))) {
+            agent_task_failed("Workspace write path could not be recorded for verification.");
+            agent_loop_active = 0;
+            return;
+        }
+    } else if (agent_is_verified_readback(command)) {
+        agent_pending_verify_path[0] = '\0';
     }
 
     agent_task_observation(command, output);
@@ -158,7 +244,7 @@ static void ollama_handle_agent_command(const char* command) {
     if (agent_action_count >= AGENT_MAX_ACTIONS)
         strcat(feedback_prompt, "\\nAction budget exhausted. Use <EXEC_CMD:stop> now.");
     else
-        strcat(feedback_prompt, "\\nChoose one next read-only action, or use <EXEC_CMD:stop> if done.");
+        strcat(feedback_prompt, "\\nChoose one next allowed OS action, or use <EXEC_CMD:stop> if done.");
 
     print_string("\n[Network: Sending observed result to agent... ]\n");
     ollama_feedback_request(global_ip_str, feedback_prompt);
@@ -416,7 +502,7 @@ static err_t ollama_recv_cb(void *arg, struct tcp_pcb *tpcb,
         }
         reset_text_color();
         set_text_color(MAKE_COLOR(COLOR_LIGHT_GREEN, COLOR_BLACK));
-        print_string("\nJARVIS [/] $ ");
+        print_string("\nAOS [/] $ ");
         reset_text_color();
         rx_accum_len = 0;
         return ERR_OK;
@@ -464,13 +550,16 @@ static err_t ollama_connected_cb(void *arg, struct tcp_pcb *tpcb, err_t err) {
         }
         print_string("Network: Connection to Ollama FAILED (err=");
         kprint_dec((int)err);
-        print_string(").\nJARVIS [/] $ ");
+        print_string(").\nAOS [/] $ ");
         return err;
     }
     print_string("Network: Connected! Model: " OLLAMA_MODEL "\n");
 
-    // JSON-escape the user prompt so stray " or \ can't break the body.
+    // Escape both JSON strings so prompt quotes and newlines remain valid JSON.
+    static char escaped_system[4096];
     static char escaped_prompt[8192];
+    json_escape(agent_loop_active ? SYSTEM_PROMPT : CHAT_SYSTEM_PROMPT,
+                escaped_system, (int)sizeof(escaped_system));
     json_escape(global_prompt, escaped_prompt, (int)sizeof(escaped_prompt));
 
     // Build JSON body.
@@ -479,7 +568,7 @@ static err_t ollama_connected_cb(void *arg, struct tcp_pcb *tpcb, err_t err) {
     strcpy(json_body,
         "{\"model\":\"" OLLAMA_MODEL "\","
         "\"system\":\"");
-    strcat(json_body, agent_loop_active ? SYSTEM_PROMPT : CHAT_SYSTEM_PROMPT);
+    strcat(json_body, escaped_system);
     strcat(json_body, "\",\"prompt\":\"");
 
     // Append escaped user prompt only if it fits.
@@ -547,7 +636,7 @@ static void ollama_err_cb(void *arg, err_t err) {
     }
     print_string("\nNetwork: TCP error (err=");
     kprint_dec((int)err);
-    print_string(") — Ollama unreachable or reset.\nJARVIS [/] $ ");
+    print_string(") — Ollama unreachable or reset.\nAOS [/] $ ");
     rx_accum_len = 0;
 }
 
@@ -599,7 +688,7 @@ void ollama_request(const char* ip_str, const char* prompt) {
 
     extern char fat32_cwd_path[];
     static char context_prompt[1024];
-    strcpy(context_prompt, "[JARVIS OS STATE] CWD=");
+    strcpy(context_prompt, "[AOS OS STATE] CWD=");
     strcat(context_prompt, fat32_cwd_path);
     strcat(context_prompt, " | Task: ");
 
@@ -614,7 +703,7 @@ void ollama_request(const char* ip_str, const char* prompt) {
     context_prompt[cur_len + user_len] = '\0';
 
     if (agent_loop_active)
-        strcat(context_prompt, " [AGENT TASK] Use bounded read-only tools and report observations.");
+        strcat(context_prompt, " [AGENT TASK] Use bounded OS tools and report observations.");
     else
         strcat(context_prompt, " Answer normally without executing tools.");
 
@@ -679,6 +768,7 @@ void ollama_agent_request(const char* ip_str, const char* prompt) {
     }
     agent_loop_active = 1;
     agent_action_count = 0;
+    agent_pending_verify_path[0] = '\0';
     ollama_request(ip_str, prompt);
 }
 

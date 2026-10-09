@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Pitch Brief</title>
+  <style>
+    :root {
+      --bg: #08111d; --panel: #101b2a; --panel-2: #0f1727; --stroke: #24364d; --text: #edf3fa; --muted: #a9b9cd; --link: #7bb7ff; --accent: #6ee7b7; --code: #0b1320;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: linear-gradient(180deg, #08111d 0%, #0d1726 100%); color: var(--text); line-height: 1.7;
+    }
+    .page { max-width: 980px; margin: 0 auto; padding: 36px 20px 80px; }
+    .meta { display: flex; justify-content: space-between; align-items: center; gap: 12px; border-bottom: 1px solid var(--stroke); padding-bottom: 10px; margin-bottom: 20px; }
+    .meta .badge { color: var(--accent); font-weight: 700; letter-spacing: .12em; text-transform: uppercase; font-size: 11px; }
+    a { color: var(--link); text-decoration: none; } a:hover { text-decoration: underline; }
+    h1, h2, h3, h4 { line-height: 1.25; margin-top: 1.5em; }
+    h1 { font-size: clamp(2rem, 4vw, 3rem); margin-top: 0.3em; }
+    h2 { color: #b9d8ff; border-bottom: 1px solid var(--stroke); padding-bottom: 8px; }
+    h3 { color: #dfeaff; }
+    p, li { color: var(--text); }
+    ul, ol { padding-left: 1.4rem; }
+    blockquote { margin: 1.2rem 0; padding: 0.7rem 1rem; border-left: 4px solid #c4b5fd; background: rgba(196,181,253,.08); color: var(--muted); }
+    pre { background: rgba(7,13,18,.9); border: 1px solid var(--stroke); border-radius: 10px; padding: 1rem; overflow-x: auto; }
+    code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; background: rgba(148,163,184,.1); border: 1px solid rgba(148,163,184,.15); padding: 0.12rem 0.35rem; border-radius: 4px; color: #eaf2ff; }
+    pre code { background: transparent; border: 0; padding: 0; }
+    table { border-collapse: collapse; width: 100%; margin: 1rem 0; }
+    th, td { border: 1px solid var(--stroke); padding: .55rem .7rem; text-align: left; }
+    th { background: rgba(148,163,184,.09); }
+    hr { border: 0; border-top: 1px solid var(--stroke); margin: 2rem 0; }
+  </style>
+</head>
+<body>
+  <main class="page">
+    <div class="meta">
+      <div class="badge">AOS docs</div>
+      <a href="../blog_docs/index.html">Back to docs portal</a>
+    </div>
+    <h1>AOS: A Persistent, AI-Assisted Operating Environment</h1><h2>One-Sentence Pitch</h2><p>AOS is a prototype operating environment for persistent, policy-checked AI work: the OS validates model-proposed actions, runs bounded programs in its own Lisp runtime, and remembers useful tools on persistent storage instead of forcing the same work to be re-created by a host-side script every time.</p><h2>Talk Track</h2><p>Most AI assistants operate outside the system they control. A model proposes commands, a host-side script executes them, and any useful state or workflow disappears after the interaction ends. AOS reframes that relationship: the model proposes an action, the OS checks it against policy, the kernel executes the approved operation, and the result becomes the next observation in a closed loop.</p><p>This keeps the control loop inside the environment that owns the tools. AOS does not ask the model to re-derive a routine every time it is needed. Instead, it validates a small program, saves it in the OS-owned filesystem, and reuses it by name. The result is closer to a persistent, programmable operating environment than to a shell-level helper script.</p><p>The current prototype is deliberately narrow. It demonstrates live model requests, kernel-side Lisp execution, persistent memory, and saved calculator workflows on FAT32-backed storage. It does not embed the model in the kernel, it does not provide a general-purpose code-execution environment for arbitrary generated C, and it does not permit unrestricted live kernel rewriting.</p><h2>Research Question</h2><p>Can an OS-owned policy and execution loop, combined with persistent bounded programs, increase the reuse of validated workflows while keeping AI-directed actions inspectable, constrained, and explainable?</p><h3>Hypothesis</h3><p>For recurring tasks, saving and invoking a validated OS-native tool will reduce model calls, prompt tokens, and completion latency compared with regenerating or re-planning the same procedure each time, without increasing invalid or rejected actions.</p><h2>System Contribution</h2><ul><li><strong>OS-owned action loop:</strong> AOS validates a model-proposed tool, executes it through its own shell/runtime, captures output, and supplies the observation for the next decision.</li><li><strong>Bounded in-kernel language:</strong> Lisp supports arithmetic, variables, conditionals, loops, display, keyboard input, and selected OS queries under source, parser, and execution-step limits.</li><li><strong>Persistent agent tools:</strong> <code>memory-get/set</code> store short records; <code>tool-save/read/run</code> persist validated Lisp programs under <code>/agent/lisp</code> and reuse them by name.</li><li><strong>Constrained runtime extension experiment:</strong> <code>kernel-stub</code> reaches the existing narrow JIT contract for a single allowlisted action. It is not general C compilation or unrestricted kernel mutation.</li></ul><h2>Three-Minute Demo</h2><p>Requirements: boot the current AOS ISO, connect the AOS Ethernet link to the host&#x27;s local Ollama service, and use an AHCI-backed FAT32 volume if demonstrating reboot persistence.</p><ol><li>Ask the agent to execute a simple program:</li></ol><p>``<code>text    ask print hello world    </code>``</p><p>Show the model-proposed <code>lisp</code> action, the text printed by AOS, and the agent&#x27;s observed completion.</p><ol><li>Demonstrate persistent memory:</li></ol><p>``<code>text    lisp (print (memory-set &quot;demo&quot; &quot;saved in AOS&quot;))    lisp (print (memory-get &quot;demo&quot;))    </code>``</p><p>Expected output: <code>1</code>, then <code>saved in AOS</code>.</p><ol><li>Save a factorial tool, then invoke it separately:</li></ol><p>``<code>text    lisp (print (tool-save &quot;fact5&quot; &quot;(begin (var n 5)(var r 1)(var i 1)(while (&lt;= i n)(begin(set! r (* r i))(set! i (+ i 1))))(print r))&quot;))    apps    runapp fact5    </code>``</p><p>Expected: save returns <code>1</code>, <code>apps</code> lists <code>FACT5.LSP</code>, and <code>runapp fact5</code> prints <code>120</code>. Use <code>cat /agent/lisp/FACT5.LSP</code> to inspect the saved source.</p><ol><li>Explain the boundary: the LLM runs through the local Ollama endpoint; AOS owns validation, execution, and persistence. The Lisp interpreter is bounded but still runs in kernel context, so this is not a security-isolated sandbox.</li></ol><h2>Evaluation Plan</h2><p>Compare a stateless baseline that asks the model to recreate a procedure for every request with an AOS treatment that saves a validated Lisp tool once and invokes it on repeats. Use the same model, machine, task set, and initial OS state.</p><ul><li>Tasks: repeated arithmetic, status summaries, persistent memory lookup/update, and small stateful workflows.</li><li>Independent variable: stateless re-planning versus saved-tool reuse.</li><li>Primary metrics: model calls, prompt/completion tokens, end-to-end latency, task success rate, and invalid/rejected action rate.</li><li>Reliability checks: malformed Lisp rejection, step-limit termination, storage readback, tool reuse, and persistence after reboot on physical FAT32.</li><li>Report per-task results and failures; do not claim a security sandbox until process isolation exists.</li></ul><h2>Current Boundaries</h2><ul><li>Model inference is provided by a local Ollama-compatible host service; it is not embedded in the kernel.</li><li>Lisp validation and step limits bound supported programs but do not isolate them from kernel memory or faults.</li><li>FAT32-compatible saved tools use <code>.lsp</code> names and short source limits; reboot persistence depends on non-RAM storage and still needs a reboot test on the presentation machine.</li><li><code>kernel-stub</code> is experimental and supports only a narrow existing JIT action contract. Do not present it as general AI-driven kernel rewriting.</li><li>Multi-step planning remains model-dependent; the agent can reject or stop on a malformed or unsupported action.</li></ul><h2>Suggested Closing</h2><p>AOS is a prototype for moving AI agency from the host script into the operating system: the OS becomes the durable place where capabilities are governed, programs are executed, and useful tools are remembered. The research contribution is not an LLM in ring zero; it is testing whether OS-owned policy plus persistent, bounded programs makes agentic workflows more efficient and reproducible.</p>
+  </main>
+</body>
+</html>

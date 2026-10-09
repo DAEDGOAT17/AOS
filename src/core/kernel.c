@@ -113,16 +113,18 @@ void kmain(uint32_t magic, multiboot_info_t* mbd) {
     // -------------------------------------------------------------------
     clear_screen();
 
-    // Large ASCII logo - pure 7-bit ASCII, renders perfectly on any framebuffer
-    print_color_string("  #####     #    ######  ##   ##  ###  #####\n",  MAKE_COLOR(COLOR_LIGHT_CYAN,  COLOR_BLACK));
-    print_color_string("     #     # #   #    #  ##   ##   #  #     \n",  MAKE_COLOR(COLOR_LIGHT_CYAN,  COLOR_BLACK));
-    print_color_string("     #    #####  ######   ## ##    #   ####  \n",  MAKE_COLOR(COLOR_CYAN,         COLOR_BLACK));
-    print_color_string("  #  #   #     # #    #    ###     #       # \n",  MAKE_COLOR(COLOR_LIGHT_CYAN,  COLOR_BLACK));
-    print_color_string("   ###   #     # #    #     #     ###  #####  \n", MAKE_COLOR(COLOR_LIGHT_CYAN,  COLOR_BLACK));
+    // Large AOS mark - pure 7-bit ASCII, renders on every framebuffer.
+    print_color_string("   ###      #####     ######\n", MAKE_COLOR(COLOR_LIGHT_CYAN, COLOR_BLACK));
+    print_color_string("  #   #    #     #   #      \n", MAKE_COLOR(COLOR_LIGHT_CYAN, COLOR_BLACK));
+    print_color_string(" #     #   #     #   #      \n", MAKE_COLOR(COLOR_CYAN, COLOR_BLACK));
+    print_color_string(" #######   #     #    ##### \n", MAKE_COLOR(COLOR_LIGHT_CYAN, COLOR_BLACK));
+    print_color_string(" #     #   #     #         #\n", MAKE_COLOR(COLOR_LIGHT_CYAN, COLOR_BLACK));
+    print_color_string(" #     #   #     #         #\n", MAKE_COLOR(COLOR_LIGHT_CYAN, COLOR_BLACK));
+    print_color_string(" #     #    #####    ###### \n", MAKE_COLOR(COLOR_LIGHT_CYAN, COLOR_BLACK));
     print_char('\n');
 
     print_color_string("  +--------------------------------------------------+\n", MAKE_COLOR(COLOR_LIGHT_BLUE, COLOR_BLACK));
-    print_color_string("  |       x86_64 OS Kernel  v1.0  --  64-bit         |\n", MAKE_COLOR(COLOR_YELLOW,     COLOR_BLACK));
+    print_color_string("  |       AOS  --  AI-Assisted Operating System      |\n", MAKE_COLOR(COLOR_YELLOW, COLOR_BLACK));
     print_color_string("  +--------------------------------------------------+\n", MAKE_COLOR(COLOR_LIGHT_BLUE, COLOR_BLACK));
     print_char('\n');
 

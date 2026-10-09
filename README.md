@@ -13,6 +13,8 @@
 The full architecture documentation, development guides, and subsystem deep-dives are rendered live at:
 👉 **[https://daedgoat17.github.io/AOS/](https://daedgoat17.github.io/AOS/)**
 
+Research overview and reproducible demo: [AOS AI-Assisted Operating Environment](docs/genera_pitch/PITCH_BRIEF.md).
+
 ---
 
 ## 🎯 Quick Start (Build & Run)
@@ -40,7 +42,7 @@ Jarvis OS is a comprehensive educational operating system kernel designed to tea
 ### Key Highlights
 - **From Scratch**: No external kernel frameworks—everything built for educational clarity
 - **Modern Boot**: Supports both legacy BIOS and UEFI with Multiboot 2 specification
-- **AI-Ready**: Integrated LLM engine with NLP intent mapping in the kernel shell
+- **AI-Assisted Runtime**: AOS owns task policy, bounded tool execution, interpreted Lisp apps, and persistent agent tools; a local Ollama-compatible service supplies model inference
 - **Practical Testing**: Runs on modern x86_64 systems, VirtualBox, and QEMU
 
 ---
@@ -84,9 +86,10 @@ Jarvis OS is a comprehensive educational operating system kernel designed to tea
 - **Display**: Terminal-based output with graphics capability
 
 ### AI Integration
-- **LLM Engine**: Embedded AI brain for advanced shell capabilities
-- **NLP Intent Mapping**: Natural language processing for command interpretation
-- **Intelligent Shell**: Context-aware command processing and suggestions
+- **Model Boundary**: The language model runs through a local Ollama-compatible endpoint; model inference is not embedded in the kernel
+- **OS-Owned Agent Loop**: AOS validates proposed actions, executes native shell/Lisp tools, captures observations, and sends results back for the next bounded decision
+- **Persistent Lisp Tools**: Validated named programs and short memory records are stored through FAT32 APIs and can be read or reused by the OS
+- **Constrained JIT Experiment**: A narrow, allowlisted native-stub path explores runtime extension; it is not general C compilation or unrestricted kernel mutation
 
 ---
 

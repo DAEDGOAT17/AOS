@@ -1,5 +1,6 @@
 import unittest
 from importlib.util import spec_from_file_location, module_from_spec
+from unittest.mock import patch
 
 MODULE_PATH = "/home/dead-goat/AOS/AOS/tools/aos_command_bridge.py"
 
@@ -25,6 +26,17 @@ class AOSCommandBridgeTests(unittest.TestCase):
         self.assertTrue(mod.is_safe_command("sysinfo"))
         self.assertTrue(mod.is_safe_command("ls /"))
         self.assertFalse(mod.is_safe_command("reboot"))
+
+    def test_submit_task_sends_goal_to_native_aos_agent(self):
+        with patch.object(mod, "send_to_aos", return_value="task started") as send:
+            result = mod.submit_task("192.168.77.10", 9001, "run a small program")
+
+        self.assertEqual(result, "task started")
+        send.assert_called_once_with("192.168.77.10", 9001, "ask run a small program", timeout=5.0)
+
+    def test_submit_task_rejects_multiline_goals(self):
+        with self.assertRaises(ValueError):
+            mod.submit_task("192.168.77.10", 9001, "first line\nsecond line")
 
 
 if __name__ == "__main__":

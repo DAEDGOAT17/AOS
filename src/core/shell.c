@@ -31,7 +31,7 @@ static int queued_lisp_app_ready;
 static char queued_lisp_expression[3001];
 static int queued_lisp_expression_ready;
 const char* commands[] = {
-    "ls", "cd", "cat", "touch", "write", "rm", "mkdir", "rmdir", "clear", "echo", "pwd", "uptime", "diskinfo", "agentreport", "lisp", "help", "ps", "mem", "reboot", "sysinfo", "cpuid", "arch", "pci", "ahci", "ifconfig", "netstat", "ai", "ai_mock", "pktdump", "ping", "voice", "infer", "agent_ctx_set", "agent_ctx_get", "agent_plan", "agent_selfcheck", "agent_task", NULL
+    "ls", "cd", "cat", "touch", "write", "rm", "mkdir", "rmdir", "clear", "echo", "pwd", "uptime", "diskinfo", "agentreport", "lisp", "apps", "runapp", "help", "ps", "mem", "reboot", "sysinfo", "cpuid", "arch", "pci", "ahci", "ifconfig", "netstat", "ai", "ai_mock", "pktdump", "ping", "voice", "infer", "agent_ctx_set", "agent_ctx_get", "agent_plan", "agent_selfcheck", "agent_task", "ask", NULL
 };
 
 typedef struct {
@@ -200,6 +200,71 @@ static int shell_execute_lisp_command(const char* command, const char* argument)
     }
     aos_lisp_execute(source, argument);
     return 1;
+}
+
+static uint32_t shell_saved_app_count;
+
+static void shell_saved_app_list_callback(const char* name, uint8_t attributes,
+                                          uint32_t size, uint32_t cluster) {
+    uint32_t length = strlen(name);
+    (void)cluster;
+    if ((attributes & FAT_ATTR_DIRECTORY) || length < 5 ||
+        strcmp(name + length - 4, ".LSP") != 0) return;
+    print_string("  ");
+    print_string(name);
+    print_string("  ");
+    kprint_dec(size);
+    print_string(" bytes\n");
+    shell_saved_app_count++;
+}
+
+static void shell_list_saved_apps(void) {
+    uint32_t cluster;
+    if (!fat32_is_mounted()) {
+        print_string("AOS apps: FAT32 storage is unavailable.\n");
+        return;
+    }
+    cluster = fat32_resolve_path("/agent/lisp");
+    if (cluster == 0) {
+        print_string("AOS apps: no saved Lisp apps yet.\n");
+        return;
+    }
+    shell_saved_app_count = 0;
+    print_string("AOS saved Lisp apps:\n");
+    if (fat32_list_dir(cluster, shell_saved_app_list_callback) != 0) {
+        print_string("  Could not read the app directory.\n");
+        return;
+    }
+    if (shell_saved_app_count == 0) print_string("  (none)\n");
+    print_string("Run one with: runapp <name> [argument]\n");
+}
+
+static void shell_run_saved_app(char* argument) {
+    char name[9];
+    char* app_argument;
+    uint32_t length = 0;
+    if (!argument) {
+        print_string("Usage: runapp <name> [argument]\n");
+        return;
+    }
+    while (argument[length] && argument[length] != ' ') length++;
+    if (length == 0 || length >= sizeof(name)) {
+        print_string("App name must be 1-8 lowercase letters/digits.\n");
+        return;
+    }
+    memcpy(name, argument, length);
+    name[length] = '\0';
+    for (uint32_t index = 0; index < length; index++) {
+        if (name[index] >= 'A' && name[index] <= 'Z') name[index] += 'a' - 'A';
+    }
+    app_argument = argument + length;
+    while (*app_argument == ' ') app_argument++;
+    if (!shell_lisp_command_name_valid(name)) {
+        print_string("Saved app name is invalid or conflicts with a shell command.\n");
+        return;
+    }
+    if (!shell_execute_lisp_command(name, app_argument))
+        print_string("Saved app not found. Run 'apps' to see installed tools.\n");
 }
 
 int shell_queue_lisp_app(const char* name) {
@@ -621,7 +686,7 @@ static void cmd_arch() {
 static void cmd_sysinfo() {
     set_text_color(MAKE_COLOR(COLOR_LIGHT_CYAN, COLOR_BLACK));
     print_string("  +--------------------------------------+\n");
-    print_string("  |    JARVIS OS  --  System Report      |\n");
+    print_string("  |       AOS  --  System Report         |\n");
     print_string("  +--------------------------------------+\n");
     reset_text_color();
 
@@ -629,7 +694,7 @@ static void cmd_sysinfo() {
     set_text_color(MAKE_COLOR(COLOR_LIGHT_BLUE, COLOR_BLACK));
     print_string("  =[ OS ]=================================\n");
     reset_text_color();
-    print_string("  Name         : Jarvis OS\n");
+    print_string("  Name         : AOS\n");
     print_string("  Arch         : x86_64 (64-bit)\n");
     print_string("  Boot Method  : GRUB Multiboot2 / UEFI\n");
     print_string("  Paging       : 4-Level (PML4)\n");
@@ -796,6 +861,15 @@ void shell_execute(char* cmd) {
         }
         return;
     }
+    else if (strcmp(cmd, "apps") == 0) {
+        if (arg) print_string("Usage: apps\n");
+        else shell_list_saved_apps();
+        return;
+    }
+    else if (strcmp(cmd, "runapp") == 0) {
+        shell_run_saved_app(arg);
+        return;
+    }
     else if (strcmp(cmd, "cat") == 0) {
         if (!arg) { print_string("Usage: cat <file>\n"); return; }
         int fd = fat32_open(arg, 'r');
@@ -897,6 +971,12 @@ void shell_execute(char* cmd) {
         print_string("  diskinfo                   Show storage type, sectors, and FAT32 label\n");
         print_string("  agentreport                Show saved agent task audit (runtime install)\n");
         print_string("  lisp <expression>          Evaluate a bounded Lisp expression\n");
+        print_string("  apps                       List saved AOS Lisp apps and tools\n");
+        print_string("  runapp <name> [argument]   Run a saved Lisp app directly\n");
+        print_string("  Lisp memory: (memory-set \"key\" \"value\"), (memory-get \"key\")\n");
+        print_string("  Lisp tools: (tool-save \"name\" \"(print 42)\"), tool-read, tool-run\n");
+        print_string("  Saved Lisp tools use /agent/lisp/<name>.lsp and are validated before run\n");
+        print_string("  (kernel-stub \"driver_init C subset\") runs one whitelisted JIT action\n");
         print_string("  clear                      Clear the screen\n");
         print_string("  help                       Show this command list\n\n");
         print_string("SYSTEM AND HARDWARE\n");
@@ -917,7 +997,9 @@ void shell_execute(char* cmd) {
         print_string("AI, AGENT, AND VOICE\n");
         print_string("  infer <prompt>             Classify a prompt with the local inference engine\n");
         print_string("  ai_mock                    Test the AI command intercept\n");
-        print_string("  agent_task <instruction>   Start a bounded read-only agent task\n");
+        print_string("  ask <goal>                 Let the AOS agent use OS tools to complete a task\n");
+        print_string("  agent_task <instruction>   Start a bounded OS agent task\n");
+        print_string("                             Workspace writes are limited to /agent/work\n");
         print_string("  agent_plan <instruction>   Save a bounded self-improvement plan\n");
         print_string("  agent_selfcheck            Check saved agent task status\n");
         print_string("  agent_complete             Mark the current agent task complete\n");
@@ -1194,8 +1276,8 @@ void shell_execute(char* cmd) {
         agent_selfcheck();
         return;
     }
-    else if (strcmp(cmd, "agent_task") == 0) {
-        if (!arg) { print_string("Usage: agent_task <instruction>\n"); return; }
+    else if (strcmp(cmd, "ask") == 0 || strcmp(cmd, "agent_task") == 0) {
+        if (!arg) { print_string("Usage: ask <goal>\n"); return; }
         extern void agent_task(const char* inst);
         agent_task(arg);
         return;
@@ -1258,7 +1340,7 @@ void shell_input(char c) {
         shell_history_position = shell_history_count;
 
         set_text_color(MAKE_COLOR(COLOR_LIGHT_GREEN, COLOR_BLACK));
-        print_string("JARVIS [");
+        print_string("AOS [");
         set_text_color(MAKE_COLOR(COLOR_LIGHT_BLUE, COLOR_BLACK));
         fat32_print_cwd();
         set_text_color(MAKE_COLOR(COLOR_LIGHT_GREEN, COLOR_BLACK));
@@ -1273,7 +1355,7 @@ void shell_input(char c) {
         print_char('\n');
         shell_execute(shell_buffer);
         set_text_color(MAKE_COLOR(COLOR_LIGHT_GREEN, COLOR_BLACK));
-        print_string("JARVIS [");
+        print_string("AOS [");
         set_text_color(MAKE_COLOR(COLOR_LIGHT_BLUE, COLOR_BLACK));
         fat32_print_cwd();
         set_text_color(MAKE_COLOR(COLOR_LIGHT_GREEN, COLOR_BLACK));
@@ -1403,11 +1485,11 @@ void shell_task(void) {
     static bool welcomed = false;
     if (!welcomed) {
         set_text_color(MAKE_COLOR(COLOR_LIGHT_CYAN, COLOR_BLACK));
-        print_string("\nJARVIS OS - Interactive Mode\n");
+        print_string("\nAOS - AI-Assisted Operating Environment\n");
         reset_text_color();
         print_string("Type 'help' for a list of commands.\n\n");
         set_text_color(MAKE_COLOR(COLOR_LIGHT_GREEN, COLOR_BLACK));
-        print_string("JARVIS [");
+        print_string("AOS [");
         set_text_color(MAKE_COLOR(COLOR_LIGHT_BLUE, COLOR_BLACK));
         fat32_print_cwd();
         set_text_color(MAKE_COLOR(COLOR_LIGHT_GREEN, COLOR_BLACK));
@@ -1422,7 +1504,7 @@ void shell_task(void) {
         queued_lisp_app[0] = '\0';
         queued_lisp_app_ready = 0;
         shell_execute(app_name);
-        print_string("\nJARVIS [");
+        print_string("\nAOS [");
         fat32_print_cwd();
         print_string("] $ ");
         return;
@@ -1432,7 +1514,7 @@ void shell_task(void) {
         queued_lisp_expression_ready = 0;
         aos_lisp_execute(queued_lisp_expression, "");
         queued_lisp_expression[0] = '\0';
-        print_string("\nJARVIS [");
+        print_string("\nAOS [");
         fat32_print_cwd();
         print_string("] $ ");
         return;

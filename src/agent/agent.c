@@ -36,6 +36,8 @@ static int agent_read_text(const char* key, char* value, uint32_t capacity) {
 void agent_init(void) {
     fat32_mkdir("/agent");
     fat32_mkdir("/agent/db");
+    fat32_mkdir("/agent/lisp");
+    fat32_mkdir("/agent/work");
 }
 
 void agent_ctx_set(const char* key, const char* value) {
@@ -161,7 +163,7 @@ void agent_complete_task(void) {
         return;
     }
 
-    strcpy(summary, "Executed read-only task: ");
+    strcpy(summary, "Executed bounded OS task: ");
     strcat(summary, task_last);
     strcat(summary, ". Action output is stored in task_observation.");
 

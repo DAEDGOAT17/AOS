@@ -1,404 +1,44 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Global Descriptor Table (GDT) - AOS Docs</title>
-    <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
-
-        body {
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: #333;
-            min-height: 100vh;
-        }
-
-        .header-nav {
-            background: rgba(0, 0, 0, 0.9);
-            padding: 1rem 2rem;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.3);
-            position: sticky;
-            top: 0;
-            z-index: 100;
-        }
-
-        .header-nav a {
-            color: white;
-            text-decoration: none;
-            font-weight: bold;
-            font-size: 1.3rem;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-            background-clip: text;
-        }
-
-        .nav-buttons {
-            display: flex;
-            gap: 1rem;
-        }
-
-        .nav-btn {
-            background: #667eea;
-            color: white;
-            padding: 0.6rem 1.2rem;
-            border-radius: 6px;
-            text-decoration: none;
-            transition: all 0.3s;
-            font-size: 0.9rem;
-            border: none;
-            cursor: pointer;
-        }
-
-        .nav-btn:hover {
-            background: #764ba2;
-            transform: translateY(-2px);
-        }
-
-        .container {
-            max-width: 900px;
-            margin: 0 auto;
-            padding: 2rem;
-        }
-
-        .content {
-            background: white;
-            padding: 3rem;
-            border-radius: 15px;
-            box-shadow: 0 15px 50px rgba(0, 0, 0, 0.2);
-            line-height: 1.8;
-        }
-
-        h1 {
-            color: #667eea;
-            font-size: 2.5rem;
-            margin-bottom: 1rem;
-            border-bottom: 3px solid #667eea;
-            padding-bottom: 1rem;
-        }
-
-        h2 {
-            color: #667eea;
-            font-size: 1.8rem;
-            margin-top: 2rem;
-            margin-bottom: 1rem;
-        }
-
-        h3 {
-            color: #764ba2;
-            font-size: 1.4rem;
-            margin-top: 1.5rem;
-            margin-bottom: 0.8rem;
-        }
-
-        h4 {
-            color: #555;
-            font-size: 1.1rem;
-            margin-top: 1rem;
-            margin-bottom: 0.6rem;
-        }
-
-        p {
-            margin-bottom: 1rem;
-            color: #555;
-            line-height: 1.8;
-        }
-
-        ul, ol {
-            margin-left: 2rem;
-            margin-bottom: 1rem;
-        }
-
-        li {
-            margin-bottom: 0.5rem;
-            color: #555;
-        }
-
-        code {
-            background: #f4f4f4;
-            padding: 0.2rem 0.5rem;
-            border-radius: 4px;
-            font-family: 'Courier New', monospace;
-            color: #d63384;
-        }
-
-        pre {
-            background: #1e1e1e;
-            color: #d4d4d4;
-            padding: 1.5rem;
-            border-radius: 8px;
-            overflow-x: auto;
-            margin: 1.5rem 0;
-            border-left: 4px solid #667eea;
-            line-height: 1.5;
-        }
-
-        pre code {
-            color: #d4d4d4;
-            background: none;
-            padding: 0;
-        }
-
-        table {
-            width: 100%;
-            border-collapse: collapse;
-            margin: 1.5rem 0;
-        }
-
-        table th {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
-            padding: 1rem;
-            text-align: left;
-            font-weight: bold;
-        }
-
-        table td {
-            border-bottom: 1px solid #ddd;
-            padding: 1rem;
-            color: #555;
-        }
-
-        table tr:hover {
-            background: #f9f9f9;
-        }
-
-        .box {
-            background: #f0f4ff;
-            border-left: 4px solid #667eea;
-            padding: 1.5rem;
-            margin: 1.5rem 0;
-            border-radius: 6px;
-        }
-
-        .box.note {
-            background: #e8f4f8;
-            border-left-color: #00bcd4;
-        }
-
-        .box.warning {
-            background: #fff3cd;
-            border-left-color: #ffc107;
-        }
-
-        .box.important {
-            background: #f8d7da;
-            border-left-color: #dc3545;
-        }
-
-        .box h4 {
-            margin-top: 0;
-        }
-
-        blockquote {
-            border-left: 4px solid #667eea;
-            padding-left: 1.5rem;
-            margin: 1.5rem 0;
-            color: #666;
-            font-style: italic;
-        }
-
-      .breadcrumb {
-        background: rgba(255, 255, 255, 0.92);
-        color: #444;
-        margin-bottom: 2rem;
-        font-size: 0.95rem;
-        padding: 0.85rem 1rem;
-        border-radius: 0.75rem;
-        border: 1px solid rgba(102, 126, 234, 0.2);
-        box-shadow: 0 8px 18px rgba(102, 126, 234, 0.12);
-      }
-
-      .breadcrumb a {
-        color: #3345a5;
-        text-decoration: none;
-        font-weight: 600;
-      }
-
-      .breadcrumb a:hover {
-        color: #1f2c75;
-        text-decoration: underline;
-      }
-
-      .breadcrumb span {
-        margin: 0 0.45rem;
-        color: #666;
-      }
-
-        .related-docs {
-            background: #f9f9f9;
-            padding: 2rem;
-            border-radius: 8px;
-            margin-top: 3rem;
-            border-top: 2px solid #667eea;
-        }
-
-        .related-docs h3 {
-            color: #667eea;
-            margin-top: 0;
-        }
-
-        .related-docs ul {
-            list-style: none;
-            margin-left: 0;
-        }
-
-        .related-docs li {
-            margin-bottom: 0.8rem;
-        }
-
-        .related-docs a {
-            color: #667eea;
-            text-decoration: none;
-            font-weight: 500;
-        }
-
-        .related-docs a:hover {
-            text-decoration: underline;
-        }
-
-        footer {
-            background: rgba(0, 0, 0, 0.9);
-            color: #aaa;
-            text-align: center;
-            padding: 2rem;
-            margin-top: 4rem;
-            border-top: 2px solid #667eea;
-        }
-
-        @media (max-width: 768px) {
-            .container {
-                padding: 1rem;
-            }
-
-            .content {
-                padding: 1.5rem;
-            }
-
-            h1 {
-                font-size: 1.8rem;
-            }
-
-            h2 {
-                font-size: 1.4rem;
-            }
-
-            .header-nav {
-                flex-direction: column;
-                gap: 1rem;
-                text-align: center;
-            }
-
-            .nav-buttons {
-                width: 100%;
-                justify-content: center;
-            }
-        }
-
-        .feature-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-            gap: 1rem;
-            margin: 1.5rem 0;
-        }
-
-        .feature-box {
-            background: #f0f4ff;
-            padding: 1rem;
-            border-radius: 6px;
-            border-left: 3px solid #667eea;
-        }
-
-        .feature-box strong {
-            color: #667eea;
-        }
-    </style>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Gdt</title>
+  <style>
+    :root {
+      --bg: #08111d; --panel: #101b2a; --panel-2: #0f1727; --stroke: #24364d; --text: #edf3fa; --muted: #a9b9cd; --link: #7bb7ff; --accent: #6ee7b7; --code: #0b1320;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: linear-gradient(180deg, #08111d 0%, #0d1726 100%); color: var(--text); line-height: 1.7;
+    }
+    .page { max-width: 980px; margin: 0 auto; padding: 36px 20px 80px; }
+    .meta { display: flex; justify-content: space-between; align-items: center; gap: 12px; border-bottom: 1px solid var(--stroke); padding-bottom: 10px; margin-bottom: 20px; }
+    .meta .badge { color: var(--accent); font-weight: 700; letter-spacing: .12em; text-transform: uppercase; font-size: 11px; }
+    a { color: var(--link); text-decoration: none; } a:hover { text-decoration: underline; }
+    h1, h2, h3, h4 { line-height: 1.25; margin-top: 1.5em; }
+    h1 { font-size: clamp(2rem, 4vw, 3rem); margin-top: 0.3em; }
+    h2 { color: #b9d8ff; border-bottom: 1px solid var(--stroke); padding-bottom: 8px; }
+    h3 { color: #dfeaff; }
+    p, li { color: var(--text); }
+    ul, ol { padding-left: 1.4rem; }
+    blockquote { margin: 1.2rem 0; padding: 0.7rem 1rem; border-left: 4px solid #c4b5fd; background: rgba(196,181,253,.08); color: var(--muted); }
+    pre { background: rgba(7,13,18,.9); border: 1px solid var(--stroke); border-radius: 10px; padding: 1rem; overflow-x: auto; }
+    code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; background: rgba(148,163,184,.1); border: 1px solid rgba(148,163,184,.15); padding: 0.12rem 0.35rem; border-radius: 4px; color: #eaf2ff; }
+    pre code { background: transparent; border: 0; padding: 0; }
+    table { border-collapse: collapse; width: 100%; margin: 1rem 0; }
+    th, td { border: 1px solid var(--stroke); padding: .55rem .7rem; text-align: left; }
+    th { background: rgba(148,163,184,.09); }
+    hr { border: 0; border-top: 1px solid var(--stroke); margin: 2rem 0; }
+  </style>
 </head>
 <body>
-    <div class="header-nav">
-        <a href="../index.html">📚 AOS Docs</a>
-        <div class="nav-buttons">
-            <a href="bootloader.html" class="nav-btn">← Previous</a>
-            <a href="../index.html" class="nav-btn">Home</a>
-            <a href="../memory/pmm.html" class="nav-btn">Next →</a>
-        </div>
+  <main class="page">
+    <div class="meta">
+      <div class="badge">AOS docs</div>
+      <a href="../blog_docs/index.html">Back to docs portal</a>
     </div>
-
-    <div class="container">
-        <div class="breadcrumb">
-            <a href="../index.html">Home</a>
-            <span>/</span>
-            <a href="#">Architecture & Boot</a>
-            <span>/</span>
-            <span>Global Descriptor Table</span>
-        </div>
-
-        <div class="content">
-            <h1>Global Descriptor Table (GDT)</h1>
-            <p><em>Memory Segmentation in x86_64</em></p>
-
-            <h2>Overview</h2>
-            <p>
-                The Global Descriptor Table (GDT) is a fundamental data structure that defines memory segments and their 
-                protection levels in x86 and x86_64 architectures. In AOS, the GDT establishes the foundation for 
-                protected mode operation and 64-bit long mode execution.
-            </p>
-
-            <h2>What is the GDT?</h2>
-            <p>
-                The GDT is a table in memory that contains <strong>segment descriptors</strong>. Each descriptor defines:
-            </p>
-            <ul>
-                <li><strong>Base Address</strong> - Where the segment starts in memory</li>
-                <li><strong>Limit</strong> - How large the segment can be</li>
-                <li><strong>Access Rights</strong> - Read/Write permissions and privilege levels</li>
-                <li><strong>Flags</strong> - Additional properties (32-bit, 64-bit, page granularity)</li>
-            </ul>
-            <p>
-                In 64-bit mode, the GDT plays a reduced role compared to 32-bit systems, but it's still mandatory.
-            </p>
-
-            <h2>Purpose in AOS</h2>
-
-            <table>
-                <thead>
-                    <tr>
-                        <th>Purpose</th>
-                        <th>Impact</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    <tr>
-                        <td>Establish memory protection</td>
-                        <td>Prevents user programs from accessing kernel memory</td>
-                    </tr>
-                    <tr>
-                        <td>Define privilege levels</td>
-                        <td>Separates Ring 0 (kernel) from Ring 3 (user mode)</td>
-                    </tr>
-                    <tr>
-                        <td>Mandatory for processor</td>
-                        <td>CPU requires GDT to function in protected mode</td>
-                    </tr>
-                    <tr>
-                        <td>Context switching</td>
-                        <td>Loaded when switching between kernel and user code</td>
-                    </tr>
-                </tbody>
-            </table>
-
-            <h2>GDT Structure in AOS</h2>
-
-            <h3>Descriptor Table Definition</h3>
-            <pre><code>// From include/gdt.h
+    <h1>Global Descriptor Table (GDT) - Memory Segmentation in x86_64</h1><h2>Overview</h2><p>The Global Descriptor Table (GDT) is a fundamental data structure that defines memory segments and their protection levels in x86 and x86_64 architectures. In AOS, the GDT establishes the foundation for protected mode operation and 64-bit long mode execution.</p><p>---</p><h2>What is the GDT?</h2><p>The GDT is a table in memory that contains <strong>segment descriptors</strong>. Each descriptor defines:</p><ul><li><strong>Base Address</strong> - Where the segment starts in memory</li><li><strong>Limit</strong> - How large the segment can be</li><li><strong>Access Rights</strong> - Read/Write permissions and privilege levels</li><li><strong>Flags</strong> - Additional properties (32-bit, 64-bit, page granularity)</li></ul><p>In 64-bit mode, the GDT plays a reduced role compared to 32-bit systems, but it&#x27;s still mandatory.</p><p>---</p><h2>Purpose in AOS</h2><p>| Purpose                     | Impact                                              | | --------------------------- | --------------------------------------------------- | | Establish memory protection | Prevents user programs from accessing kernel memory | | Define privilege levels     | Separates Ring 0 (kernel) from Ring 3 (user mode)   | | Mandatory for processor     | CPU requires GDT to function in protected mode      | | Context switching           | Loaded when switching between kernel and user code  |</p><p>---</p><h2>GDT Structure in AOS</h2><h3>Descriptor Table Definition</h3><pre><code class="language-c">// From include/gdt.h
 struct gdt_entry {
     uint16_t limit_low;      // Lower 16 bits of limit
     uint16_t base_low;       // Lower 16 bits of base address
@@ -411,217 +51,84 @@ struct gdt_entry {
 struct gdt_ptr {
     uint16_t limit;          // Limit of the GDT itself
     uint64_t base;           // Pointer to GDT in memory
-} __attribute__((packed));</code></pre>
-
-            <h3>Access Byte Breakdown</h3>
-            <div class="box note">
-                <h4>Access Byte Format</h4>
-                <ul>
-                    <li>Bit 7: Present (1 = segment is valid)</li>
-                    <li>Bit 6: Privilege Level (0 = Ring 0, 3 = Ring 3)</li>
-                    <li>Bit 5: User-defined</li>
-                    <li>Bits 4-0: Type (Code, Data, etc.)</li>
-                </ul>
-            </div>
-
-            <h2>AOS GDT Configuration</h2>
-            <p>
-                AOS uses a minimal 3-entry GDT:
-            </p>
-
-            <table>
-                <thead>
-                    <tr>
-                        <th>Index</th>
-                        <th>Type</th>
-                        <th>Purpose</th>
-                        <th>Access</th>
-                        <th>Flags</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    <tr>
-                        <td>0</td>
-                        <td>Null</td>
-                        <td>Required (must be 0)</td>
-                        <td>0x00</td>
-                        <td>0x00</td>
-                    </tr>
-                    <tr>
-                        <td>1</td>
-                        <td>Code</td>
-                        <td>Kernel code segment</td>
-                        <td>0x9A</td>
-                        <td>0x20 (64-bit)</td>
-                    </tr>
-                    <tr>
-                        <td>2</td>
-                        <td>Data</td>
-                        <td>Kernel data segment</td>
-                        <td>0x92</td>
-                        <td>0x00</td>
-                    </tr>
-                </tbody>
-            </table>
-
-            <h3>Access Values Explained</h3>
-
-            <div class="feature-grid">
-                <div class="feature-box">
-                    <strong>Code segment (0x9A):</strong> 10011010
-                    <ul style="margin-top: 0.5rem; margin-left: 1rem;">
-                        <li>Bit 7: Present (1)</li>
-                        <li>Bit 6: Ring 0 (0)</li>
-                        <li>Bit 4: Executable (1)</li>
-                    </ul>
-                </div>
-                <div class="feature-box">
-                    <strong>Data segment (0x92):</strong> 10010010
-                    <ul style="margin-top: 0.5rem; margin-left: 1rem;">
-                        <li>Bit 7: Present (1)</li>
-                        <li>Bit 6: Ring 0 (0)</li>
-                        <li>Bit 1: Read/Write (1)</li>
-                    </ul>
-                </div>
-            </div>
-
-            <h2>Implementation Walkthrough</h2>
-
-            <h3>Step 1: Define GDT and Pointer</h3>
-            <pre><code>// From src/arch/x86_64/gdt.c
+} __attribute__((packed));</code></pre><h3>Access Byte Breakdown</h3><pre><code>Bit 7: Present (1 = segment is valid)
+Bit 6: Privilege Level (0 = Ring 0, 3 = Ring 3)
+Bit 5: User-defined
+Bits 4-0: Type (Code, Data, etc.)</code></pre><h3>Flags Byte</h3><pre><code>Bit 7: Granularity (0 = 1-byte, 1 = 4KB pages)
+Bit 6: Size (0 = 16-bit, 1 = 32-bit)
+Bit 5: Long mode (0 = 32-bit, 1 = 64-bit)
+Bits 3-0: Upper limit nibble</code></pre><p>---</p><h2>AOS GDT Configuration</h2><p>AOS uses a minimal 3-entry GDT:</p><p>| Index | Type | Purpose              | Access | Flags         | | ----- | ---- | -------------------- | ------ | ------------- | | 0     | Null | Required (must be 0) | 0x00   | 0x00          | | 1     | Code | Kernel code segment  | 0x9A   | 0x20 (64-bit) | | 2     | Data | Kernel data segment  | 0x92   | 0x00          |</p><h3>Access Values Explained</h3><ul><li><strong>Code segment (0x9A)</strong>: <code>10011010</code></li></ul><p>- Bit 7: Present (1)   - Bit 6: Privilege Ring 0 (0)   - Bit 4: Executable (1)   - Bit 3: Code/Data (1)   - Bit 1: Read/Write (1)</p><ul><li><strong>Data segment (0x92)</strong>: <code>10010010</code></li></ul><p>- Bit 7: Present (1)   - Bit 6: Privilege Ring 0 (0)   - Bit 0: Read/Write (1)</p><p>---</p><h2>Implementation Walkthrough</h2><h3>Step 1: Define GDT and Pointer</h3><pre><code class="language-c">// From src/arch/x86_64/gdt.c
 struct gdt_entry gdt[3];        // Our 3-entry GDT
-struct gdt_ptr gp;              // Pointer for LGDT instruction</code></pre>
-
-            <h3>Step 2: GDT Gate Setting Function</h3>
-            <pre><code>void gdt_set_gate(int num, uint32_t base, uint32_t limit, 
+struct gdt_ptr gp;              // Pointer for LGDT instruction</code></pre><h3>Step 2: GDT Gate Setting Function</h3><pre><code class="language-c">void gdt_set_gate(int num, uint32_t base, uint32_t limit,
                   uint8_t access, uint8_t gran) {
     // Set base address
-    gdt[num].base_low    = (base & 0xFFFF);           // Bits 0-15
-    gdt[num].base_middle = (base >> 16) & 0xFF;       // Bits 16-23
-    gdt[num].base_high   = (base >> 24) & 0xFF;       // Bits 24-31
-    
+    gdt[num].base_low    = (base &amp; 0xFFFF);           // Bits 0-15
+    gdt[num].base_middle = (base &gt;&gt; 16) &amp; 0xFF;       // Bits 16-23
+    gdt[num].base_high   = (base &gt;&gt; 24) &amp; 0xFF;       // Bits 24-31
+
     // Set limit
-    gdt[num].limit_low   = (limit & 0xFFFF);          // Bits 0-15
-    gdt[num].granularity = (limit >> 16) & 0x0F;      // Bits 16-19
-    
+    gdt[num].limit_low   = (limit &amp; 0xFFFF);          // Bits 0-15
+    gdt[num].granularity = (limit &gt;&gt; 16) &amp; 0x0F;      // Bits 16-19
+
     // Set granularity flags
-    gdt[num].granularity |= gran & 0xF0;
-    
+    gdt[num].granularity |= gran &amp; 0xF0;
+
     // Set access byte
     gdt[num].access = access;
-}</code></pre>
-
-            <div class="box important">
-                <h4>⚠️ Important: Initialization Order</h4>
-                <p>The GDT must be initialized FIRST before any other CPU structures (IDT, TSS, etc.). 
-                The CPU requires a valid GDT to function in protected mode.</p>
-            </div>
-
-            <h3>Step 3: Initialize GDT</h3>
-            <pre><code>void init_gdt() {
+}</code></pre><h3>Step 3: Initialize GDT</h3><pre><code class="language-c">void init_gdt() {
     // Set GDT pointer (limit and base address)
     gp.limit = (sizeof(struct gdt_entry) * 3) - 1;
-    gp.base  = (uint64_t)&gdt;
-    
+    gp.base  = (uint64_t)&amp;gdt;
+
     // Entry 0: Null descriptor (required)
     gdt_set_gate(0, 0, 0, 0, 0);
-    
+
     // Entry 1: Kernel code segment (64-bit)
-    gdt_set_gate(1, 0, 0, 
+    gdt_set_gate(1, 0, 0,
                  GDT_ACCESS_PRESENT | GDT_ACCESS_RING0 | GDT_ACCESS_CODE,
                  GDT_FLAG_64BIT);
-    
+
     // Entry 2: Kernel data segment
     gdt_set_gate(2, 0, 0,
                  GDT_ACCESS_PRESENT | GDT_ACCESS_RING0 | GDT_ACCESS_DATA,
                  0);
-    
+
     // Load GDT into CPU via assembly instruction
-    gdt_flush((uint64_t)&gp);
-}</code></pre>
+    gdt_flush((uint64_t)&amp;gp);
+}</code></pre><h3>Step 4: Assembly - GDT Flush</h3><p>The <code>gdt_flush</code> function is implemented in assembly (in <code>src/arch/x86_64/asm/loader.s</code>):</p><pre><code class="language-nasm">extern gdt_flush
 
-            <h2>Segment Selectors</h2>
-            <p>
-                When you load a segment register (CS, DS, ES, etc.), you provide a <strong>segment selector</strong>:
-            </p>
+global gdt_flush:function
+gdt_flush:
+    mov rax, [rdi]           ; Load GDT pointer from RDI
+    lgdt [rdi]               ; Load GDT Descriptor (LGDT instruction)
+    mov ax, 0x10             ; Load data segment (index 2, ring 0)
+    mov ds, ax               ; DS = data segment
+    mov es, ax               ; ES = data segment
+    mov fs, ax               ; FS = data segment
+    mov gs, ax               ; GS = data segment
+    mov ss, ax               ; SS = data segment
+    pop rdi                  ; Get return address
+    mov rax, 0x08            ; Code segment (index 1, ring 0)
+    push rax                 ; Push code segment
+    push rdi                 ; Push return address
+    retfq                    ; Far return (updates CS)</code></pre><p>---</p><h2>Memory Addresses in 64-bit Mode</h2><p>In 64-bit long mode, base addresses and limits are effectively ignored:</p><ul><li><strong>Base Address</strong>: Always 0 (flat memory address space)</li><li><strong>Limit</strong>: Effectively 2^64 (entire address space)</li></ul><p>The GDT&#x27;s primary function becomes <strong>privilege level control</strong> rather than memory segmentation.</p><p>---</p><h2>Why Null Descriptor at Index 0?</h2><p>The null descriptor (all zeros) at index 0 is <strong>mandatory</strong> in x86 architectures. Attempting to use segment 0 (via setting a segment register to 0) will trigger an exception, preventing accidental access to segment 0.</p><p>---</p><h2>Privilege Levels Explained</h2><p>In 32-bit protected mode, GDT entries could define:</p><ul><li><strong>Ring 0</strong>: Kernel privilege (full access)</li><li><strong>Ring 1-2</strong>: Not typically used</li><li><strong>Ring 3</strong>: User mode privilege (restricted access)</li></ul><p>AOS currently uses:</p><ul><li><strong>Ring 0 Code</strong>: For kernel instructions</li><li><strong>Ring 0 Data</strong>: For kernel data access</li><li><strong>No Ring 3</strong>: User mode not yet implemented</li></ul><p>---</p><h2>Segment Selectors</h2><p>When you load a segment register (CS, DS, ES, etc.), you provide a <strong>segment selector</strong>:</p><pre><code>15        3     2    1   0
+[  Index  ] [TI] [RPL]</code></pre><ul><li><strong>Index</strong> (13 bits): Which GDT entry (0-8191)</li><li><strong>TI</strong> (1 bit): 0 = GDT, 1 = LDT (Local Descriptor Table)</li><li><strong>RPL</strong> (2 bits): Requested Privilege Level</li></ul><h3>Examples:</h3><ul><li>Selector <code>0x08</code> = Index 1, GDT, Ring 0 (kernel code)</li><li>Selector <code>0x10</code> = Index 2, GDT, Ring 0 (kernel data)</li><li>Selector <code>0x1B</code> = Index 3, GDT, Ring 3 (user code)</li></ul><p>---</p><h2>Loading the GDT at Boot</h2><p>The initialization sequence in <code>kmain()</code> demonstrates GDT loading:</p><pre><code class="language-c">void kmain(uint32_t magic, multiboot_info_t* mbd) {
+    // Initialize GDT FIRST before anything else
+    init_gdt();
 
-            <table>
-                <thead>
-                    <tr>
-                        <th>Bits</th>
-                        <th>Name</th>
-                        <th>Purpose</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    <tr>
-                        <td>15-3</td>
-                        <td>Index</td>
-                        <td>Which GDT entry (0-8191)</td>
-                    </tr>
-                    <tr>
-                        <td>2</td>
-                        <td>TI</td>
-                        <td>0 = GDT, 1 = LDT</td>
-                    </tr>
-                    <tr>
-                        <td>1-0</td>
-                        <td>RPL</td>
-                        <td>Privilege Level (0-3)</td>
-                    </tr>
-                </tbody>
-            </table>
+    // ... rest of initialization
+}</code></pre><p><strong>Why first?</strong></p><ul><li>Other CPU structures (IDT, TSS) depend on valid segment descriptors</li><li>Memory protection won&#x27;t work without a valid GDT</li><li>Any CPU fault could occur without proper descriptors</li></ul><p>---</p><h2>Advanced: Future User Mode Support</h2><p>For future user mode implementation, the GDT would need:</p><pre><code class="language-c">// Ring 3 Code Segment
+gdt_set_gate(3, 0, 0,
+             GDT_ACCESS_PRESENT | GDT_ACCESS_RING3 | GDT_ACCESS_CODE,
+             GDT_FLAG_64BIT);
 
-            <div class="box note">
-                <h4>Examples:</h4>
-                <ul>
-                    <li><code>0x08</code> = Index 1, GDT, Ring 0 (kernel code)</li>
-                    <li><code>0x10</code> = Index 2, GDT, Ring 0 (kernel data)</li>
-                    <li><code>0x1B</code> = Index 3, GDT, Ring 3 (user code)</li>
-                </ul>
-            </div>
+// Ring 3 Data Segment
+gdt_set_gate(4, 0, 0,
+             GDT_ACCESS_PRESENT | GDT_ACCESS_RING3 | GDT_ACCESS_DATA,
+             0);
 
-            <h2>Memory Addresses in 64-bit Mode</h2>
-            <p>
-                In 64-bit long mode, base addresses and limits are effectively ignored:
-            </p>
-            <ul>
-                <li><strong>Base Address:</strong> Always 0 (flat memory address space)</li>
-                <li><strong>Limit:</strong> Effectively 2<sup>64</sup> (entire address space)</li>
-            </ul>
-            <p>
-                The GDT's primary function becomes <strong>privilege level control</strong> rather than memory segmentation.
-            </p>
-
-            <h2>Key Takeaways</h2>
-
-            <div class="box">
-                <ul>
-                    <li>✓ GDT is mandatory for processor operation</li>
-                    <li>✓ AOS uses minimal 3-entry table</li>
-                    <li>✓ Segment descriptors define memory protection</li>
-                    <li>✓ 64-bit mode simplifies segmentation</li>
-                    <li>✓ LGDT instruction loads the GDT into CPU</li>
-                    <li>✓ Far JMP/RET instructions update CS after GDT load</li>
-                    <li>✓ Future Ring 3 support will require additional entries</li>
-                </ul>
-            </div>
-
-            <div class="related-docs">
-                <h3>Related Components</h3>
-                <ul>
-                    <li><a href="../interrupt_io/idt.html">IDT - Interrupt Descriptor Table</a></li>
-                    
-                    <li><a href="../memory/vmm.html">Virtual Memory Management</a></li>
-                    <li><a href="../core_systems/kernel_init.html">Kernel Initialization</a></li>
-                </ul>
-            </div>
-        </div>
-    </div>
-
-    <footer>
-        <p><strong>AOS - Technical Documentation</strong></p>
-        <p>Source Files: <code>include/gdt.h</code> | <code>src/arch/x86_64/gdt.c</code> | <code>src/arch/x86_64/asm/loader.s</code></p>
-    </footer>
+// Task State Segment (TSS) for privilege transitions
+gdt_set_gate_tss(5, &amp;tss_entry);</code></pre><p>---</p><h2>Common Issues &amp; Troubleshooting</h2><p>| Issue                    | Cause                 | Solution                                | | ------------------------ | --------------------- | --------------------------------------- | | Triple fault immediately | Null GDT              | Verify <code>init_gdt()</code> is called first     | | General protection fault | Invalid selector      | Check segment register values           | | Long mode not working    | 64-bit flag not set   | Ensure <code>GDT_FLAG_64BIT</code> in granularity  | | Wrong privilege level    | Access byte incorrect | Verify access bits match intended level |</p><p>---</p><h2>Key Takeaways</h2><p>✓ GDT is mandatory for processor operation   ✓ AOS uses minimal 3-entry table   ✓ Segment descriptors define memory protection   ✓ 64-bit mode simplifies segmentation   ✓ LGDT instruction loads the GDT into CPU   ✓ Far JMP/RET instructions update CS after GDT load   ✓ Future Ring 3 support will require additional entries</p><p>---</p><h2>Related Components</h2><ul><li><a href="../interrupt_io/idt.html">IDT - Interrupt Descriptor Table</a></li><li><a href="long_mode.html">Long Mode Transition</a></li><li><a href="../memory/vmm.html">Virtual Memory Management</a></li><li><a href="../core_systems/kernel_init.html">Kernel Initialization</a></li></ul><p>---</p><p><strong>Source Files:</strong></p><ul><li><code>include/gdt.h</code> - Header definitions</li><li><code>src/arch/x86_64/gdt.c</code> - Implementation</li><li><code>src/arch/x86_64/asm/loader.s</code> - Assembly routines</li></ul>
+  </main>
 </body>
 </html>

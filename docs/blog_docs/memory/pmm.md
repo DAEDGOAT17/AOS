@@ -397,10 +397,10 @@ void* heap_pages = pmm_alloc_pages(256);  // 1MB
 
 ## Related Components
 
-- [Virtual Memory Manager](vmm.md)
-- [Kernel Memory Allocator](kmalloc.md)
-- [Bootloader & Multiboot](../architecture/bootloader.md)
-- [Kernel Initialization](../core_systems/kernel_init.md)
+- [Virtual Memory Manager](vmm.html)
+- [Kernel Memory Allocator](kmalloc.html)
+- [Bootloader & Multiboot](../architecture/bootloader.html)
+- [Kernel Initialization](../core_systems/kernel_init.html)
 
 ---
 

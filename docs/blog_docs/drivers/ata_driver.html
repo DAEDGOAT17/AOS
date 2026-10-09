@@ -1,458 +1,254 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>ATA/IDE Storage Driver - AOS Docs</title>
-    <style>
-      * {
-        margin: 0;
-        padding: 0;
-        box-sizing: border-box;
-      }
-
-      body {
-        font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-        color: #333;
-        min-height: 100vh;
-      }
-
-      .header-nav {
-        background: rgba(0, 0, 0, 0.9);
-        padding: 1rem 2rem;
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        box-shadow: 0 2px 10px rgba(0, 0, 0, 0.3);
-        position: sticky;
-        top: 0;
-        z-index: 100;
-      }
-
-      .header-nav a {
-        color: white;
-        text-decoration: none;
-        font-weight: bold;
-        font-size: 1.3rem;
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-        -webkit-background-clip: text;
-        -webkit-text-fill-color: transparent;
-        background-clip: text;
-      }
-
-      .nav-buttons {
-        display: flex;
-        gap: 1rem;
-      }
-
-      .nav-btn {
-        background: #667eea;
-        color: white;
-        padding: 0.6rem 1.2rem;
-        border-radius: 6px;
-        text-decoration: none;
-        transition: all 0.3s;
-        font-size: 0.9rem;
-        border: none;
-        cursor: pointer;
-      }
-
-      .nav-btn:hover {
-        background: #764ba2;
-        transform: translateY(-2px);
-      }
-
-      .container {
-        max-width: 900px;
-        margin: 0 auto;
-        padding: 2rem;
-      }
-
-      .content {
-        background: white;
-        padding: 3rem;
-        border-radius: 15px;
-        box-shadow: 0 15px 50px rgba(0, 0, 0, 0.2);
-        line-height: 1.8;
-      }
-
-      h1 {
-        color: #667eea;
-        font-size: 2.5rem;
-        margin-bottom: 1rem;
-        border-bottom: 3px solid #667eea;
-        padding-bottom: 1rem;
-      }
-
-      h2 {
-        color: #667eea;
-        font-size: 1.8rem;
-        margin-top: 2rem;
-        margin-bottom: 1rem;
-      }
-
-      h3 {
-        color: #764ba2;
-        font-size: 1.4rem;
-        margin-top: 1.5rem;
-        margin-bottom: 0.8rem;
-      }
-
-      h4 {
-        color: #555;
-        font-size: 1.1rem;
-        margin-top: 1rem;
-        margin-bottom: 0.6rem;
-      }
-
-      p {
-        margin-bottom: 1rem;
-        color: #555;
-        line-height: 1.8;
-      }
-
-      ul,
-      ol {
-        margin-left: 2rem;
-        margin-bottom: 1rem;
-      }
-
-      li {
-        margin-bottom: 0.5rem;
-        color: #555;
-      }
-
-      code {
-        background: #f4f4f4;
-        padding: 0.2rem 0.5rem;
-        border-radius: 4px;
-        font-family: "Courier New", monospace;
-        color: #d63384;
-      }
-
-      pre {
-        background: #1e1e1e;
-        color: #d4d4d4;
-        padding: 1.5rem;
-        border-radius: 8px;
-        overflow-x: auto;
-        margin: 1.5rem 0;
-        border-left: 4px solid #667eea;
-        line-height: 1.5;
-        font-size: 0.85rem;
-      }
-
-      pre code {
-        color: #d4d4d4;
-        background: none;
-        padding: 0;
-      }
-
-      table {
-        width: 100%;
-        border-collapse: collapse;
-        margin: 1.5rem 0;
-        font-size: 0.95rem;
-      }
-
-      table th {
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-        color: white;
-        padding: 1rem;
-        text-align: left;
-        font-weight: bold;
-      }
-
-      table td {
-        border-bottom: 1px solid #ddd;
-        padding: 0.8rem;
-        color: #555;
-      }
-
-      table tr:hover {
-        background: #f9f9f9;
-      }
-
-      .box {
-        background: #f0f4ff;
-        border-left: 4px solid #667eea;
-        padding: 1.5rem;
-        margin: 1.5rem 0;
-        border-radius: 6px;
-      }
-
-      .box.note {
-        background: #e8f4f8;
-        border-left-color: #00bcd4;
-      }
-
-      .box.warning {
-        background: #fff3cd;
-        border-left-color: #ffc107;
-      }
-
-      .box.important {
-        background: #f8d7da;
-        border-left-color: #dc3545;
-      }
-
-      .box h4 {
-        margin-top: 0;
-      }
-
-      .breadcrumb {
-        background: rgba(255, 255, 255, 0.92);
-        color: #444;
-        margin-bottom: 2rem;
-        font-size: 0.95rem;
-        padding: 0.85rem 1rem;
-        border-radius: 0.75rem;
-        border: 1px solid rgba(102, 126, 234, 0.2);
-        box-shadow: 0 8px 18px rgba(102, 126, 234, 0.12);
-      }
-
-      .breadcrumb a {
-        color: #3345a5;
-        text-decoration: none;
-        font-weight: 600;
-      }
-
-      .breadcrumb a:hover {
-        color: #1f2c75;
-        text-decoration: underline;
-      }
-
-      .breadcrumb span {
-        margin: 0 0.45rem;
-        color: #666;
-      }
-
-      .related-docs {
-        background: #f9f9f9;
-        padding: 2rem;
-        border-radius: 8px;
-        margin-top: 3rem;
-        border-top: 2px solid #667eea;
-      }
-
-      .related-docs h3 {
-        color: #667eea;
-        margin-top: 0;
-      }
-
-      .related-docs ul {
-        list-style: none;
-        margin-left: 0;
-      }
-
-      .related-docs li {
-        margin-bottom: 0.8rem;
-      }
-
-      .related-docs a {
-        color: #667eea;
-        text-decoration: none;
-        font-weight: 500;
-      }
-
-      .related-docs a:hover {
-        text-decoration: underline;
-      }
-
-      footer {
-        background: rgba(0, 0, 0, 0.9);
-        color: #aaa;
-        text-align: center;
-        padding: 2rem;
-        margin-top: 4rem;
-        border-top: 2px solid #667eea;
-      }
-
-      .diagram {
-        background: #f5f5f5;
-        border: 1px solid #ddd;
-        padding: 1.5rem;
-        border-radius: 6px;
-        margin: 1.5rem 0;
-        font-family: monospace;
-        font-size: 0.85rem;
-        overflow-x: auto;
-        color: #333;
-      }
-
-      @media (max-width: 768px) {
-        .container {
-          padding: 1rem;
-        }
-
-        .content {
-          padding: 1.5rem;
-        }
-
-        h1 {
-          font-size: 1.8rem;
-        }
-
-        .header-nav {
-          flex-direction: column;
-          gap: 1rem;
-          text-align: center;
-        }
-
-        .nav-buttons {
-          width: 100%;
-          justify-content: center;
-        }
-      }
-    </style>
-  </head>
-  <body>
-    <div class="header-nav">
-      <a href="../index.html">📚 AOS Docs</a>
-      <div class="nav-buttons">
-        <a href="../interrupt_io/idt.html" class="nav-btn">← Previous</a>
-        <a href="../index.html" class="nav-btn">Home</a>
-        <a href="keyboard_driver.html" class="nav-btn">Next →</a>
-      </div>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Ata Driver</title>
+  <style>
+    :root {
+      --bg: #08111d; --panel: #101b2a; --panel-2: #0f1727; --stroke: #24364d; --text: #edf3fa; --muted: #a9b9cd; --link: #7bb7ff; --accent: #6ee7b7; --code: #0b1320;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: linear-gradient(180deg, #08111d 0%, #0d1726 100%); color: var(--text); line-height: 1.7;
+    }
+    .page { max-width: 980px; margin: 0 auto; padding: 36px 20px 80px; }
+    .meta { display: flex; justify-content: space-between; align-items: center; gap: 12px; border-bottom: 1px solid var(--stroke); padding-bottom: 10px; margin-bottom: 20px; }
+    .meta .badge { color: var(--accent); font-weight: 700; letter-spacing: .12em; text-transform: uppercase; font-size: 11px; }
+    a { color: var(--link); text-decoration: none; } a:hover { text-decoration: underline; }
+    h1, h2, h3, h4 { line-height: 1.25; margin-top: 1.5em; }
+    h1 { font-size: clamp(2rem, 4vw, 3rem); margin-top: 0.3em; }
+    h2 { color: #b9d8ff; border-bottom: 1px solid var(--stroke); padding-bottom: 8px; }
+    h3 { color: #dfeaff; }
+    p, li { color: var(--text); }
+    ul, ol { padding-left: 1.4rem; }
+    blockquote { margin: 1.2rem 0; padding: 0.7rem 1rem; border-left: 4px solid #c4b5fd; background: rgba(196,181,253,.08); color: var(--muted); }
+    pre { background: rgba(7,13,18,.9); border: 1px solid var(--stroke); border-radius: 10px; padding: 1rem; overflow-x: auto; }
+    code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; background: rgba(148,163,184,.1); border: 1px solid rgba(148,163,184,.15); padding: 0.12rem 0.35rem; border-radius: 4px; color: #eaf2ff; }
+    pre code { background: transparent; border: 0; padding: 0; }
+    table { border-collapse: collapse; width: 100%; margin: 1rem 0; }
+    th, td { border: 1px solid var(--stroke); padding: .55rem .7rem; text-align: left; }
+    th { background: rgba(148,163,184,.09); }
+    hr { border: 0; border-top: 1px solid var(--stroke); margin: 2rem 0; }
+  </style>
+</head>
+<body>
+  <main class="page">
+    <div class="meta">
+      <div class="badge">AOS docs</div>
+      <a href="../blog_docs/index.html">Back to docs portal</a>
     </div>
+    <h1>ATA/IDE Storage Driver - Hard Disk Access</h1><h2>Overview</h2><p>The ATA (Advanced Technology Attachment) driver enables AOS to communicate with hard disk drives via the IDE (Integrated Drive Electronics) interface. ATA/IDE allows reading and writing data to storage drives via Programmed I/O (PIO) operations.</p><p>---</p><h2>What is ATA/IDE?</h2><p>ATA is a protocol for communicating with storage devices:</p><ul><li><strong>ATA-1</strong>: Original parallel ATA (PATA)</li><li><strong>SATA</strong>: Serial ATA (modern drives)</li><li><strong>IDE</strong>: Integrated Electronics (hardware interface)</li><li><strong>AHCI</strong>: Advanced Host Controller Interface (modern SATA controllers)</li></ul><p>AOS supports <strong>ATA PIO mode</strong>, the slowest but most compatible method.</p><p>---</p><h2>ATA Port I/O Addressing</h2><h3>Primary Channel (Master/Slave)</h3><pre><code>I/O Port Mapping:
 
-    <div class="container">
-      <div class="breadcrumb">
-        <a href="../index.html">Home</a>
-        <span>/</span>
-        <a href="#">Device Drivers</a>
-        <span>/</span>
-        <span>ATA/IDE Storage Driver</span>
-      </div>
+0x1F0  - Data register (Read/Write)
+0x1F1  - Error register (Read)
+0x1F1  - Feature register (Write pre-command)
+0x1F2  - Sector count
+0x1F3  - Sector number (LBA low byte)
+0x1F4  - Cylinder low (LBA mid byte)
+0x1F5  - Cylinder high (LBA high byte)
+0x1F6  - Drive/Head (Master/Slave selector)
+0x1F7  - Status (Read)
+0x1F7  - Command (Write)
+0x3F6  - Control register (IRQ/reset)
+0x3F7  - Alternate status</code></pre><h3>Secondary Channel</h3><p>Same ports shifted by 0x170 (used for additional drives):</p><pre><code>0x170  - Data register
+0x171  - Error register
+... (same pattern)</code></pre><p>---</p><h2>ATA Commands</h2><p>| Command           | Code | Purpose                       | | ----------------- | ---- | ----------------------------- | | <strong>Read Sectors</strong>  | 0x20 | Read disk sectors into buffer | | <strong>Write Sectors</strong> | 0x30 | Write buffer to disk sectors  | | <strong>Identify</strong>      | 0xEC | Get drive information         | | <strong>Set Features</strong>  | 0xEF | Enable/disable features       |</p><p>---</p><h2>Implementation in AOS</h2><h3>ATA Device Structure</h3><pre><code class="language-c">// From include/ata.h
+struct ata_device {
+    uint16_t io_base;           // I/O base address (0x1F0 or 0x170)
+    uint16_t control_base;      // Control register address
+    int      is_atapi;          // ATAPI device?
+    int      exists;            // Device exists?
 
-      <div class="content">
-        <h1>ATA/IDE Storage Driver</h1>
-        <p><em>Hard Disk Access via Programmed I/O</em></p>
+    char     model[41];         // Drive model name
+    uint32_t sectors;           // Total sectors
 
-        <h2>Overview</h2>
-        <p>
-          The ATA (Advanced Technology Attachment) driver enables AOS to
-          communicate with hard disk drives via the IDE (Integrated Drive
-          Electronics) interface. AOS supports
-          <strong>ATA PIO mode</strong>, the slowest but most compatible method.
-        </p>
+    // Current operation state
+    uint32_t current_sector;
+    uint16_t current_byte;
+};
 
-        <h2>What is ATA/IDE?</h2>
-        <p>ATA is a protocol for communicating with storage devices:</p>
-        <ul>
-          <li><strong>ATA-1</strong>: Original parallel ATA (PATA)</li>
-          <li><strong>SATA</strong>: Serial ATA (modern drives)</li>
-          <li>
-            <strong>IDE</strong>: Integrated Electronics (hardware interface)
-          </li>
-          <li>
-            <strong>AHCI</strong>: Advanced Host Controller Interface (modern
-            SATA controllers)
-          </li>
-        </ul>
+extern struct ata_device ata_devices[4];  // Master/Slave × Primary/Secondary</code></pre><h3>Identifying ATA Devices</h3><pre><code class="language-c">void ata_identify(int id) {
+    struct ata_device* dev = &amp;ata_devices[id];
 
-        <h2>ATA Port I/O Addressing</h2>
+    // Select device
+    outb(dev-&gt;io_base + ATA_REG_HDDEVSEL, 0xA0 | (id &lt;&lt; 4));
 
-        <h3>Primary Channel</h3>
+    // Send IDENTIFY command
+    outb(dev-&gt;io_base + ATA_REG_COMMAND, ATA_CMD_IDENTIFY);
 
-        <table>
-          <thead>
-            <tr>
-              <th>Port</th>
-              <th>Register</th>
-              <th>Purpose</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr>
-              <td>0x1F0</td>
-              <td>Data</td>
-              <td>Read/Write sector data</td>
-            </tr>
-            <tr>
-              <td>0x1F2</td>
-              <td>Sector Count</td>
-              <td>Number of sectors to read/write</td>
-            </tr>
-            <tr>
-              <td>0x1F3-0x1F5</td>
-              <td>LBA</td>
-              <td>First sector address (28-bit)</td>
-            </tr>
-            <tr>
-              <td>0x1F6</td>
-              <td>Drive/Head</td>
-              <td>Select master/slave</td>
-            </tr>
-            <tr>
-              <td>0x1F7</td>
-              <td>Status/Command</td>
-              <td>Read status or write command</td>
-            </tr>
-          </tbody>
-        </table>
+    // Wait for response
+    uint8_t status = inb(dev-&gt;io_base + ATA_REG_STATUS);
+    if (status == 0) {
+        dev-&gt;exists = 0;
+        return;
+    }
 
-        <h2>ATA Commands</h2>
+    // Wait for busy bit to clear
+    while (inb(dev-&gt;io_base + ATA_REG_STATUS) &amp; ATA_SR_BSY);
 
-        <table>
-          <thead>
-            <tr>
-              <th>Command</th>
-              <th>Code</th>
-              <th>Purpose</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr>
-              <td>Read Sectors</td>
-              <td>0x20</td>
-              <td>Read disk sectors into buffer</td>
-            </tr>
-            <tr>
-              <td>Write Sectors</td>
-              <td>0x30</td>
-              <td>Write buffer to disk sectors</td>
-            </tr>
-            <tr>
-              <td>Identify</td>
-              <td>0xEC</td>
-              <td>Get drive information</td>
-            </tr>
-          </tbody>
-        </table>
+    // Read identification data
+    uint16_t* buf = kmalloc(512);
+    for (int i = 0; i &lt; 256; i++) {
+        buf[i] = inw(dev-&gt;io_base + ATA_REG_DATA);
+    }
 
-        <h2>Key Takeaways</h2>
+    // Extract drive information
+    dev-&gt;sectors = *(uint32_t*)(buf + 60);  // LBA28
 
-        <div class="box">
-          <ul>
-            <li>✓ ATA/IDE uses I/O port addressing for disk control</li>
-            <li>✓ LBA (Logical Block Addressing) for sector access</li>
-            <li>✓ PIO mode reads/writes data directly via ports</li>
-            <li>✓ Status register polling indicates progress</li>
-            <li>✓ Error checking prevents silent corruption</li>
-            <li>✓ Partition offset found in Master Boot Record</li>
-          </ul>
-        </div>
+    // Extract model name
+    for (int i = 0; i &lt; 40; i += 2) {
+        dev-&gt;model[i]   = buf[27 + (i/2)] &gt;&gt; 8;
+        dev-&gt;model[i+1] = buf[27 + (i/2)] &amp; 0xFF;
+    }
+    dev-&gt;model[40] = &#x27;\0&#x27;;
 
-        <div class="related-docs">
-          <h3>Related Components</h3>
-          <ul>
-            <li><a href="../filesystem/fat32.html">FAT32 Filesystem</a></li>
-            <li><a href="ahci_driver.html">AHCI Driver</a></li>
-            <li><a href="pci_driver.html">PCI Driver</a></li>
-            <li><a href="../interrupt_io/idt.html">Interrupt Handling</a></li>
-          </ul>
-        </div>
-      </div>
-    </div>
+    dev-&gt;exists = 1;
+    kfree(buf);
+}</code></pre><p>---</p><h2>Reading Sectors</h2><h3>Basic Read Operation (28-bit LBA)</h3><pre><code class="language-c">int ata_read_sectors(int id, uint32_t lba, uint16_t count, uint8_t* buf) {
+    struct ata_device* dev = &amp;ata_devices[id];
 
-    <footer>
-      <p><strong>AOS - Technical Documentation</strong></p>
-      <p>
-        Source Files: <code>include/ata.h</code> |
-        <code>src/drivers/ata.c</code>
-      </p>
-    </footer>
-  </body>
+    if (!dev-&gt;exists || count == 0 || count &gt; 256) {
+        return -1;
+    }
+
+    // Select device
+    uint8_t cmd_select = 0xE0 | (id &lt;&lt; 4);  // Master or slave
+    outb(dev-&gt;io_base + ATA_REG_HDDEVSEL, cmd_select | ((lba &gt;&gt; 24) &amp; 0x0F));
+
+    // Set block count
+    outb(dev-&gt;io_base + ATA_REG_SECCOUNT0, count);
+
+    // Set LBA
+    outb(dev-&gt;io_base + ATA_REG_LBA0, lba &amp; 0xFF);
+    outb(dev-&gt;io_base + ATA_REG_LBA1, (lba &gt;&gt; 8) &amp; 0xFF);
+    outb(dev-&gt;io_base + ATA_REG_LBA2, (lba &gt;&gt; 16) &amp; 0xFF);
+
+    // Send READ SECTORS command
+    outb(dev-&gt;io_base + ATA_REG_COMMAND, ATA_CMD_READ_PIO);
+
+    // Wait for each sector
+    for (int i = 0; i &lt; count; i++) {
+        // Wait for data ready
+        while (inb(dev-&gt;io_base + ATA_REG_STATUS) &amp; ATA_SR_BSY);
+        uint8_t status = inb(dev-&gt;io_base + ATA_REG_STATUS);
+
+        if (status &amp; ATA_SR_DF) {
+            return -1;  // Device fault
+        }
+        if (!(status &amp; ATA_SR_DRQ)) {
+            return -1;  // No data
+        }
+
+        // Read 512 bytes (256 words)
+        for (int j = 0; j &lt; 256; j++) {
+            uint16_t data = inw(dev-&gt;io_base + ATA_REG_DATA);
+            buf[i*512 + j*2]     = data &amp; 0xFF;
+            buf[i*512 + j*2 + 1] = (data &gt;&gt; 8) &amp; 0xFF;
+        }
+    }
+
+    return count;
+}</code></pre><p>---</p><h2>Writing Sectors</h2><pre><code class="language-c">int ata_write_sectors(int id, uint32_t lba, uint16_t count, uint8_t* buf) {
+    struct ata_device* dev = &amp;ata_devices[id];
+
+    if (!dev-&gt;exists || count == 0 || count &gt; 256) {
+        return -1;
+    }
+
+    // Select device
+    uint8_t cmd_select = 0xE0 | (id &lt;&lt; 4);
+    outb(dev-&gt;io_base + ATA_REG_HDDEVSEL, cmd_select | ((lba &gt;&gt; 24) &amp; 0x0F));
+
+    // Set block count
+    outb(dev-&gt;io_base + ATA_REG_SECCOUNT0, count);
+
+    // Set LBA
+    outb(dev-&gt;io_base + ATA_REG_LBA0, lba &amp; 0xFF);
+    outb(dev-&gt;io_base + ATA_REG_LBA1, (lba &gt;&gt; 8) &amp; 0xFF);
+    outb(dev-&gt;io_base + ATA_REG_LBA2, (lba &gt;&gt; 16) &amp; 0xFF);
+
+    // Send WRITE SECTORS command
+    outb(dev-&gt;io_base + ATA_REG_COMMAND, ATA_CMD_WRITE_PIO);
+
+    // Write each sector
+    for (int i = 0; i &lt; count; i++) {
+        // Wait for ready
+        while (inb(dev-&gt;io_base + ATA_REG_STATUS) &amp; ATA_SR_BSY);
+
+        uint8_t status = inb(dev-&gt;io_base + ATA_REG_STATUS);
+        if (!(status &amp; ATA_SR_DRQ)) {
+            return -1;  // Not ready for write
+        }
+
+        // Write 512 bytes
+        for (int j = 0; j &lt; 256; j++) {
+            uint16_t data = buf[i*512 + j*2] |
+                           (buf[i*512 + j*2 + 1] &lt;&lt; 8);
+            outw(dev-&gt;io_base + ATA_REG_DATA, data);
+        }
+    }
+
+    return count;
+}</code></pre><p>---</p><h2>Status Register Bits</h2><pre><code class="language-c">#define ATA_SR_BSY   0x80  // Controller is executing a command
+#define ATA_SR_DRDY  0x40  // Drive is ready
+#define ATA_SR_DF    0x20  // Drive fault
+#define ATA_SR_DSC   0x10  // Seek complete
+#define ATA_SR_DRQ   0x08  // Data request
+#define ATA_SR_CORR  0x04  // Correctable data
+#define ATA_SR_IDX   0x02  // Index mark
+#define ATA_SR_ERR   0x01  // Error occurred</code></pre><p>---</p><h2>Error Handling</h2><pre><code class="language-c">int ata_check_error(int id) {
+    struct ata_device* dev = &amp;ata_devices[id];
+    uint8_t status = inb(dev-&gt;io_base + ATA_REG_STATUS);
+
+    if (status &amp; ATA_SR_ERR) {
+        uint8_t error = inb(dev-&gt;io_base + ATA_REG_ERROR);
+
+        if (error &amp; 0x10) return -1;  // ID not found
+        if (error &amp; 0x02) return -2;  // Write protection
+        if (error &amp; 0x04) return -3;  // Media changed
+        if (error &amp; 0x40) return -4;  // Uncorrectable error
+
+        return -99;  // Unknown error
+    }
+
+    return 0;
+}</code></pre><p>---</p><h2>Partition Detection</h2><p>AOS detects the partition offset to find FAT32:</p><pre><code class="language-c">uint32_t ata_get_partition_offset(void) {
+    uint8_t mbr_buf[512];
+
+    // Read Master Boot Record (sector 0)
+    if (ata_read_sectors(0, 0, 1, mbr_buf) != 1) {
+        return 0;
+    }
+
+    // Check MBR signature
+    if (mbr_buf[510] != 0x55 || mbr_buf[511] != 0xAA) {
+        return 0;
+    }
+
+    // Read partition table entry 1 (offset 0x1CE)
+    uint32_t* partition_entry = (uint32_t*)&amp;mbr_buf[0x1CE];
+    uint32_t start_sector = partition_entry[2];  // LBA start
+
+    return start_sector * 512;  // Return byte offset
+}</code></pre><p>---</p><h2>Timing Considerations</h2><p>ATA operations are slow (~50μs per sector in PIO mode):</p><pre><code class="language-c">// Never busy-wait forever; use timeouts
+uint32_t timeout = 10000;  // Iterations
+while ((inb(dev-&gt;io_base + ATA_REG_STATUS) &amp; ATA_SR_BSY) &amp;&amp; timeout--) {
+    // Busy wait
+}
+
+if (timeout == 0) {
+    // Device timeout - may be hung
+    return -1;
+}</code></pre><p>---</p><h2>Modern Alternative: AHCI</h2><p>Modern drives use AHCI (Advanced Host Controller Interface), which:</p><ul><li>Uses memory-mapped registers instead of I/O ports</li><li>Supports Native Command Queueing (NCQ)</li><li>More complex but much faster</li></ul><p>AOS includes <code>ahci.c</code> for AHCI support on modern systems.</p><p>---</p><h2>Integration with Filesystem</h2><p>The ATA driver provides low-level sector I/O, which FAT32 uses:</p><pre><code>FAT32 Filesystem
+   ↓ (needs to read file data)
+   ↓
+ATA Driver
+   ↓ (reads sectors)
+   ↓
+IDE Controller
+   ↓
+Hard Disk</code></pre><p>---</p><h2>Common Issues</h2><p>| Issue             | Cause                | Solution              | | ----------------- | -------------------- | --------------------- | | Device not found  | No drives on channel | Check IDE cable       | | Read/write errors | Cable contact loose  | Reseat cable          | | Corrupted data    | Buffer overflow      | Check DMA/PIO setting | | Timeout           | Device hung          | Software reset needed |</p><p>---</p><h2>Performance Notes</h2><ul><li><strong>PIO mode</strong>: ~10-50 MB/s (CPU-bound)</li><li><strong>DMA mode</strong>: ~100+ MB/s (offloaded to controller)</li><li><strong>AHCI mode</strong>: ~300+ MB/s (with NCQ)</li></ul><p>AOS uses PIO for simplicity; upgrading to DMA or AHCI would significantly improve throughput.</p><p>---</p><h2>Key Takeaways</h2><p>✓ ATA/IDE uses I/O port addressing for disk control   ✓ LBA (Logical Block Addressing) for sector access   ✓ PIO mode reads/writes data directly via ports   ✓ Status register polling indicates operation progress   ✓ Error checking prevents silent data corruption   ✓ Partition offset found in Master Boot Record</p><p>---</p><h2>Related Components</h2><ul><li><a href="../filesystem/fat32.html">FAT32 Filesystem</a></li><li><a href="ahci_driver.html">AHCI Driver</a></li><li><a href="pci_driver.html">PCI Driver</a></li><li><a href="../interrupt_io/io_ports.html">Kernel I/O Operations</a></li></ul><p>---</p><p><strong>Source Files:</strong></p><ul><li><code>include/ata.h</code> - ATA definitions</li><li><code>src/drivers/ata.c</code> - ATA implementation</li></ul>
+  </main>
+</body>
 </html>

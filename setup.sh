@@ -186,6 +186,13 @@ then
     exit 2
 fi
 
-printf '\nStarting the local %s command bridge to %s:9001.\n' "$MODEL" "$AOS_IP"
+printf '\nThe AOS kernel will plan and execute the task using its native agent.\n'
+read -r -p 'What should AOS do? (leave blank to enter it at the AOS console): ' TASK_GOAL
+if [[ -z "${TASK_GOAL//[[:space:]]/}" ]]; then
+    printf 'At the AOS prompt, enter: ask <goal>\n'
+    exit 0
+fi
+
+printf 'Sending your goal to the AOS agent at %s:9001.\n' "$AOS_IP"
 cd "$ROOT_DIR"
-exec python3 tools/aos_command_bridge.py --host "$AOS_IP" --port 9001 --model "$MODEL"
+exec python3 tools/aos_command_bridge.py --host "$AOS_IP" --port 9001 --goal "$TASK_GOAL"

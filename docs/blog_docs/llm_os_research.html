@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Llm Os Research</title>
+  <style>
+    :root {
+      --bg: #08111d; --panel: #101b2a; --panel-2: #0f1727; --stroke: #24364d; --text: #edf3fa; --muted: #a9b9cd; --link: #7bb7ff; --accent: #6ee7b7; --code: #0b1320;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: linear-gradient(180deg, #08111d 0%, #0d1726 100%); color: var(--text); line-height: 1.7;
+    }
+    .page { max-width: 980px; margin: 0 auto; padding: 36px 20px 80px; }
+    .meta { display: flex; justify-content: space-between; align-items: center; gap: 12px; border-bottom: 1px solid var(--stroke); padding-bottom: 10px; margin-bottom: 20px; }
+    .meta .badge { color: var(--accent); font-weight: 700; letter-spacing: .12em; text-transform: uppercase; font-size: 11px; }
+    a { color: var(--link); text-decoration: none; } a:hover { text-decoration: underline; }
+    h1, h2, h3, h4 { line-height: 1.25; margin-top: 1.5em; }
+    h1 { font-size: clamp(2rem, 4vw, 3rem); margin-top: 0.3em; }
+    h2 { color: #b9d8ff; border-bottom: 1px solid var(--stroke); padding-bottom: 8px; }
+    h3 { color: #dfeaff; }
+    p, li { color: var(--text); }
+    ul, ol { padding-left: 1.4rem; }
+    blockquote { margin: 1.2rem 0; padding: 0.7rem 1rem; border-left: 4px solid #c4b5fd; background: rgba(196,181,253,.08); color: var(--muted); }
+    pre { background: rgba(7,13,18,.9); border: 1px solid var(--stroke); border-radius: 10px; padding: 1rem; overflow-x: auto; }
+    code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; background: rgba(148,163,184,.1); border: 1px solid rgba(148,163,184,.15); padding: 0.12rem 0.35rem; border-radius: 4px; color: #eaf2ff; }
+    pre code { background: transparent; border: 0; padding: 0; }
+    table { border-collapse: collapse; width: 100%; margin: 1rem 0; }
+    th, td { border: 1px solid var(--stroke); padding: .55rem .7rem; text-align: left; }
+    th { background: rgba(148,163,184,.09); }
+    hr { border: 0; border-top: 1px solid var(--stroke); margin: 2rem 0; }
+  </style>
+</head>
+<body>
+  <main class="page">
+    <div class="meta">
+      <div class="badge">AOS docs</div>
+      <a href="../blog_docs/index.html">Back to docs portal</a>
+    </div>
+    <h1>LLM-First Operating System Architecture for AOS</h1><h2>Overview</h2><p>This architecture treats the model as a privileged control-plane component rather than as a free-form shell executor. In an AOS-style system, model output is constrained to typed decisions that the kernel validates against an allowlist and executes through a capability gate.</p><h2>Design principle</h2><p>The system follows the pattern:</p><p>LLM output -&gt; typed action -&gt; capability gate -&gt; kernel executor -&gt; audit log</p><p>This is stricter than a standard shell-oriented assistant and closer to the design described in research systems that couple local inference with a bounded execution environment.</p><h2>Core components</h2><h3>1. Local GGUF runtime</h3><p>A compact local model or deterministic local adapter runs offline, ideally with CPU-only GGUF execution. It is expected to produce a structured JSON-style decision object rather than raw shell text.</p><p>Example schema:</p><pre><code class="language-json">{
+  &quot;action&quot;: &quot;show_status&quot;,
+  &quot;target&quot;: &quot;kernel&quot;,
+  &quot;arguments&quot;: {&quot;scope&quot;: &quot;system&quot;},
+  &quot;confidence&quot;: 0.92,
+  &quot;requires_review&quot;: false,
+  &quot;safe&quot;: true,
+  &quot;reason&quot;: &quot;status request matched telemetry action&quot;
+}</code></pre><h3>2. Capability gate</h3><p>The kernel then validates that the action is allowed by policy. Review-required actions include:</p><ul><li>reboot</li><li>stop_task</li><li>patch_config</li><li>review_patch</li></ul><p>These actions are held behind a second gate before execution.</p><h3>3. Typed executor</h3><p>The kernel executes only well-defined commands, such as:</p><ul><li>help</li><li>sysinfo</li><li>ls /</li><li>clear</li><li>reboot</li><li>agent_selfcheck</li><li>agent_plan improve</li></ul><p>This keeps model control deterministic and auditable.</p><h2>Why this fits AOS</h2><p>AOS already includes:</p><ul><li>a kernel shell</li><li>a task/agent layer</li><li>a local inference layer</li><li>a voice interface</li><li>bounded local planning memory</li></ul><p>The missing component is a formal execution contract. This document defines that contract as a safe, local LLM operating system rather than a raw unrestricted AI shell.</p><h2>Research framing</h2><p>This architecture is best described as:</p><ul><li>local-first</li><li>capability-gated</li><li>typed-action execution</li><li>bounded self-improvement</li><li>audit-friendly</li></ul><p>It is suitable for an educational OS project, a research prototype, and a local autonomous system that remains safe while still being agentic.</p>
+  </main>
+</body>
+</html>

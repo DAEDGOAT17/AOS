@@ -1,475 +1,268 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Virtual Memory Manager (VMM) - AOS Docs</title>
-    <style>
-      * {
-        margin: 0;
-        padding: 0;
-        box-sizing: border-box;
-      }
-
-      body {
-        font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-        color: #333;
-        min-height: 100vh;
-      }
-
-      .header-nav {
-        background: rgba(0, 0, 0, 0.9);
-        padding: 1rem 2rem;
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        box-shadow: 0 2px 10px rgba(0, 0, 0, 0.3);
-        position: sticky;
-        top: 0;
-        z-index: 100;
-      }
-
-      .header-nav a {
-        color: white;
-        text-decoration: none;
-        font-weight: bold;
-        font-size: 1.3rem;
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-        -webkit-background-clip: text;
-        -webkit-text-fill-color: transparent;
-        background-clip: text;
-      }
-
-      .nav-buttons {
-        display: flex;
-        gap: 1rem;
-      }
-
-      .nav-btn {
-        background: #667eea;
-        color: white;
-        padding: 0.6rem 1.2rem;
-        border-radius: 6px;
-        text-decoration: none;
-        transition: all 0.3s;
-        font-size: 0.9rem;
-        border: none;
-        cursor: pointer;
-      }
-
-      .nav-btn:hover {
-        background: #764ba2;
-        transform: translateY(-2px);
-      }
-
-      .container {
-        max-width: 900px;
-        margin: 0 auto;
-        padding: 2rem;
-      }
-
-      .content {
-        background: white;
-        padding: 3rem;
-        border-radius: 15px;
-        box-shadow: 0 15px 50px rgba(0, 0, 0, 0.2);
-        line-height: 1.8;
-      }
-
-      h1 {
-        color: #667eea;
-        font-size: 2.5rem;
-        margin-bottom: 1rem;
-        border-bottom: 3px solid #667eea;
-        padding-bottom: 1rem;
-      }
-
-      h2 {
-        color: #667eea;
-        font-size: 1.8rem;
-        margin-top: 2rem;
-        margin-bottom: 1rem;
-      }
-
-      h3 {
-        color: #764ba2;
-        font-size: 1.4rem;
-        margin-top: 1.5rem;
-        margin-bottom: 0.8rem;
-      }
-
-      h4 {
-        color: #555;
-        font-size: 1.1rem;
-        margin-top: 1rem;
-        margin-bottom: 0.6rem;
-      }
-
-      p {
-        margin-bottom: 1rem;
-        color: #555;
-        line-height: 1.8;
-      }
-
-      ul,
-      ol {
-        margin-left: 2rem;
-        margin-bottom: 1rem;
-      }
-
-      li {
-        margin-bottom: 0.5rem;
-        color: #555;
-      }
-
-      code {
-        background: #f4f4f4;
-        padding: 0.2rem 0.5rem;
-        border-radius: 4px;
-        font-family: "Courier New", monospace;
-        color: #d63384;
-      }
-
-      pre {
-        background: #1e1e1e;
-        color: #d4d4d4;
-        padding: 1.5rem;
-        border-radius: 8px;
-        overflow-x: auto;
-        margin: 1.5rem 0;
-        border-left: 4px solid #667eea;
-        line-height: 1.5;
-        font-size: 0.85rem;
-      }
-
-      pre code {
-        color: #d4d4d4;
-        background: none;
-        padding: 0;
-      }
-
-      table {
-        width: 100%;
-        border-collapse: collapse;
-        margin: 1.5rem 0;
-        font-size: 0.95rem;
-      }
-
-      table th {
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-        color: white;
-        padding: 1rem;
-        text-align: left;
-        font-weight: bold;
-      }
-
-      table td {
-        border-bottom: 1px solid #ddd;
-        padding: 0.8rem;
-        color: #555;
-      }
-
-      table tr:hover {
-        background: #f9f9f9;
-      }
-
-      .box {
-        background: #f0f4ff;
-        border-left: 4px solid #667eea;
-        padding: 1.5rem;
-        margin: 1.5rem 0;
-        border-radius: 6px;
-      }
-
-      .box.note {
-        background: #e8f4f8;
-        border-left-color: #00bcd4;
-      }
-
-      .box.warning {
-        background: #fff3cd;
-        border-left-color: #ffc107;
-      }
-
-      .box.important {
-        background: #f8d7da;
-        border-left-color: #dc3545;
-      }
-
-      .box h4 {
-        margin-top: 0;
-      }
-
-      .breadcrumb {
-        background: rgba(255, 255, 255, 0.92);
-        color: #444;
-        margin-bottom: 2rem;
-        font-size: 0.95rem;
-        padding: 0.85rem 1rem;
-        border-radius: 0.75rem;
-        border: 1px solid rgba(102, 126, 234, 0.2);
-        box-shadow: 0 8px 18px rgba(102, 126, 234, 0.12);
-      }
-
-      .breadcrumb a {
-        color: #3345a5;
-        text-decoration: none;
-        font-weight: 600;
-      }
-
-      .breadcrumb a:hover {
-        color: #1f2c75;
-        text-decoration: underline;
-      }
-
-      .breadcrumb span {
-        margin: 0 0.45rem;
-        color: #666;
-      }
-
-      .related-docs {
-        background: #f9f9f9;
-        padding: 2rem;
-        border-radius: 8px;
-        margin-top: 3rem;
-        border-top: 2px solid #667eea;
-      }
-
-      .related-docs h3 {
-        color: #667eea;
-        margin-top: 0;
-      }
-
-      .related-docs ul {
-        list-style: none;
-        margin-left: 0;
-      }
-
-      .related-docs li {
-        margin-bottom: 0.8rem;
-      }
-
-      .related-docs a {
-        color: #667eea;
-        text-decoration: none;
-        font-weight: 500;
-      }
-
-      .related-docs a:hover {
-        text-decoration: underline;
-      }
-
-      footer {
-        background: rgba(0, 0, 0, 0.9);
-        color: #aaa;
-        text-align: center;
-        padding: 2rem;
-        margin-top: 4rem;
-        border-top: 2px solid #667eea;
-      }
-
-      .diagram {
-        background: #f5f5f5;
-        border: 1px solid #ddd;
-        padding: 1.5rem;
-        border-radius: 6px;
-        margin: 1.5rem 0;
-        font-family: monospace;
-        font-size: 0.85rem;
-        overflow-x: auto;
-        color: #333;
-      }
-
-      @media (max-width: 768px) {
-        .container {
-          padding: 1rem;
-        }
-
-        .content {
-          padding: 1.5rem;
-        }
-
-        h1 {
-          font-size: 1.8rem;
-        }
-
-        .header-nav {
-          flex-direction: column;
-          gap: 1rem;
-          text-align: center;
-        }
-
-        .nav-buttons {
-          width: 100%;
-          justify-content: center;
-        }
-      }
-    </style>
-  </head>
-  <body>
-    <div class="header-nav">
-      <a href="../index.html">📚 AOS Docs</a>
-      <div class="nav-buttons">
-        <a href="pmm.html" class="nav-btn">← Previous</a>
-        <a href="../index.html" class="nav-btn">Home</a>
-        <a href="kmalloc.html" class="nav-btn">Next →</a>
-      </div>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Vmm</title>
+  <style>
+    :root {
+      --bg: #08111d; --panel: #101b2a; --panel-2: #0f1727; --stroke: #24364d; --text: #edf3fa; --muted: #a9b9cd; --link: #7bb7ff; --accent: #6ee7b7; --code: #0b1320;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: linear-gradient(180deg, #08111d 0%, #0d1726 100%); color: var(--text); line-height: 1.7;
+    }
+    .page { max-width: 980px; margin: 0 auto; padding: 36px 20px 80px; }
+    .meta { display: flex; justify-content: space-between; align-items: center; gap: 12px; border-bottom: 1px solid var(--stroke); padding-bottom: 10px; margin-bottom: 20px; }
+    .meta .badge { color: var(--accent); font-weight: 700; letter-spacing: .12em; text-transform: uppercase; font-size: 11px; }
+    a { color: var(--link); text-decoration: none; } a:hover { text-decoration: underline; }
+    h1, h2, h3, h4 { line-height: 1.25; margin-top: 1.5em; }
+    h1 { font-size: clamp(2rem, 4vw, 3rem); margin-top: 0.3em; }
+    h2 { color: #b9d8ff; border-bottom: 1px solid var(--stroke); padding-bottom: 8px; }
+    h3 { color: #dfeaff; }
+    p, li { color: var(--text); }
+    ul, ol { padding-left: 1.4rem; }
+    blockquote { margin: 1.2rem 0; padding: 0.7rem 1rem; border-left: 4px solid #c4b5fd; background: rgba(196,181,253,.08); color: var(--muted); }
+    pre { background: rgba(7,13,18,.9); border: 1px solid var(--stroke); border-radius: 10px; padding: 1rem; overflow-x: auto; }
+    code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; background: rgba(148,163,184,.1); border: 1px solid rgba(148,163,184,.15); padding: 0.12rem 0.35rem; border-radius: 4px; color: #eaf2ff; }
+    pre code { background: transparent; border: 0; padding: 0; }
+    table { border-collapse: collapse; width: 100%; margin: 1rem 0; }
+    th, td { border: 1px solid var(--stroke); padding: .55rem .7rem; text-align: left; }
+    th { background: rgba(148,163,184,.09); }
+    hr { border: 0; border-top: 1px solid var(--stroke); margin: 2rem 0; }
+  </style>
+</head>
+<body>
+  <main class="page">
+    <div class="meta">
+      <div class="badge">AOS docs</div>
+      <a href="../blog_docs/index.html">Back to docs portal</a>
     </div>
+    <h1>Virtual Memory Manager (VMM) - 4-Level Paging</h1><h2>Overview</h2><p>The Virtual Memory Manager handles the translation between virtual addresses (what programs see) and physical addresses (actual RAM locations). AOS uses <strong>4-level paging</strong> for 64-bit address space management.</p><p>---</p><h2>Why Virtual Memory?</h2><p>Virtual memory solves critical OS problems:</p><p>| Problem                 | Solution                                                | | ----------------------- | ------------------------------------------------------- | | <strong>Memory isolation</strong>    | Each process has isolated address space                 | | <strong>Large address space</strong> | 48-bit virtual space (256TB) for 64-bit systems         | | <strong>Flexible allocation</strong> | Physical RAM can be fragmented; virtual is contiguous   | | <strong>Higher-half kernel</strong>  | Kernel mapped to high addresses separate from user code | | <strong>Memory protection</strong>   | Page-level read/write/execute permissions               |</p><p>---</p><h2>Paging Overview</h2><p>Instead of direct memory access, the CPU translates addresses:</p><pre><code>Virtual Address (from program)
+   ↓
+Translation Lookaside Buffer (TLB) cache?
+   ↓
+Walk page tables
+   ↓
+Physical Address (actual RAM)
+   ↓
+Memory access</code></pre><p>---</p><h2>4-Level Page Table Structure</h2><p>64-bit virtual addresses are divided into 5 parts:</p><pre><code>Virtual Address (48-bit significant part)
 
-    <div class="container">
-      <div class="breadcrumb">
-        <a href="../index.html">Home</a>
-        <span>/</span>
-        <a href="#">Memory Management</a>
-        <span>/</span>
-        <span>Virtual Memory (Paging)</span>
-      </div>
+63-48: Sign extension (copies bit 47)
+47-39: PML4 (Page Map Level 4) index - 9 bits
+38-30: PDPT (Page Directory Pointer Table) index - 9 bits
+29-21: PD (Page Directory) index - 9 bits
+20-12: PT (Page Table) index - 9 bits
+11-0:  Offset within 4KB page - 12 bits</code></pre><h3>Example Address Translation</h3><p>For virtual address <code>0x7f8000a050</code>:</p><pre><code>Address: 0x7f8000a050
+Binary:  0000000001111111100000000000000010100000 01010000
 
-      <div class="content">
-        <h1>Virtual Memory Manager (VMM)</h1>
-        <p><em>4-Level Paging and Memory Translation</em></p>
+PML4 Index:  000000001 (1)
+PDPT Index:  111111100 (508)
+PD Index:    000000000 (0)
+PT Index:    010100000 (160)
+Offset:      01010000 (80)
 
-        <h2>Overview</h2>
-        <p>
-          The Virtual Memory Manager handles the translation between virtual
-          addresses (what programs see) and physical addresses (actual RAM
-          locations). AOS uses <strong>4-level paging</strong> for 64-bit
-          address space management.
-        </p>
-
-        <h2>Why Virtual Memory?</h2>
-
-        <table>
-          <thead>
-            <tr>
-              <th>Problem</th>
-              <th>Solution</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr>
-              <td><strong>Memory isolation</strong></td>
-              <td>Each process has isolated address space</td>
-            </tr>
-            <tr>
-              <td><strong>Large address space</strong></td>
-              <td>48-bit virtual space (256TB) for 64-bit systems</td>
-            </tr>
-            <tr>
-              <td><strong>Flexible allocation</strong></td>
-              <td>Physical RAM can be fragmented; virtual is contiguous</td>
-            </tr>
-            <tr>
-              <td><strong>Higher-half kernel</strong></td>
-              <td>Kernel mapped to high addresses separate from user code</td>
-            </tr>
-            <tr>
-              <td><strong>Memory protection</strong></td>
-              <td>Page-level read/write/execute permissions</td>
-            </tr>
-          </tbody>
-        </table>
-
-        <h2>4-Level Page Table Structure</h2>
-        <p>64-bit virtual addresses are divided into 5 parts:</p>
-
-        <div class="diagram">
-          Virtual Address (48-bit significant part) 63-48: Sign extension
-          (copies bit 47) 47-39: PML4 (Page Map Level 4) index - 9 bits 38-30:
-          PDPT (Page Directory Pointer Table) - 9 bits 29-21: PD (Page
-          Directory) index - 9 bits 20-12: PT (Page Table) index - 9 bits 11-0:
-          Offset within 4KB page - 12 bits
-        </div>
-
-        <h3>Page Table Entry (PTE)</h3>
-        <p>Each page table entry is 64 bits:</p>
-
-        <pre><code>0-11:   Reserved
+Translation:
+PML4 table[1] → PDPT address
+PDPT address[508] → PD address
+PD address[0] → PT address
+PT address[160] → Physical frame
+Physical frame + 80 = Final physical address</code></pre><p>---</p><h2>Page Structure in AOS</h2><h3>Page Table Entry (PTE)</h3><p>Each page table entry is 64 bits:</p><pre><code>0-11:   Reserved
 12-51:  Physical frame address (40 bits)
 52-61:  Available (software)
 62:     NX (No Execute)
-63:     Bit 51 of address / various flags</code></pre>
+63:     Bit 51 of address / various flags</code></pre><h3>Page Flags</h3><pre><code class="language-c">#define PAGE_PRESENT          (1UL &lt;&lt; 0)    // Page is in physical memory
+#define PAGE_WRITE            (1UL &lt;&lt; 1)    // Writable
+#define PAGE_USER             (1UL &lt;&lt; 2)    // Usermode accessible
+#define PAGE_WRITETHROUGH     (1UL &lt;&lt; 3)    // Write-through caching
+#define PAGE_NOCACHE          (1UL &lt;&lt; 4)    // No caching
+#define PAGE_ACCESSED         (1UL &lt;&lt; 5)    // CPU set on access
+#define PAGE_DIRTY            (1UL &lt;&lt; 6)    // CPU set on write
+#define PAGE_PAT              (1UL &lt;&lt; 7)    // Memory type
+#define PAGE_GLOBAL           (1UL &lt;&lt; 8)    // Global (not flushed on TLB clear)
 
-        <h3>Page Flags</h3>
-        <pre><code>// Common flags
-#define PAGE_PRESENT          (1UL << 0)    // In physical memory
-#define PAGE_WRITE            (1UL << 1)    // Writable
-#define PAGE_USER             (1UL << 2)    // Usermode accessible
-#define PAGE_NOCACHE          (1UL << 4)    // No caching
-#define PAGE_ACCESSED         (1UL << 5)    // CPU set on access
-#define PAGE_DIRTY            (1UL << 6)    // CPU set on write
-#define PAGE_GLOBAL           (1UL << 8)    // Global (not flushed)
-#define PAGE_NX               (1UL << 63)   // No Execute</code></pre>
+#define PAGE_NX               (1UL &lt;&lt; 63)   // No Execute bit
 
-        <h2>Kernel Memory Layout</h2>
-        <p>AOS maps memory as:</p>
+// Common combinations
+#define PAGE_KERNEL           (PAGE_PRESENT | PAGE_WRITE)
+#define PAGE_USER_ACCESSIBLE  (PAGE_PRESENT | PAGE_WRITE | PAGE_USER)
+#define PAGE_READONLY         (PAGE_PRESENT)</code></pre><p>---</p><h2>VMM Implementation</h2><h3>Core Data Structures</h3><pre><code class="language-c">// From include/vmm.h
+typedef uint64_t pte_t;                // Page table entry
 
-        <div class="diagram">
-          Virtual Address Space: 0x0000000000000000 - 0x00007FFFFFFFFFFF User
-          space (optional) 0x0000800000000000 - 0xFFFF7FFFFFFFFFFF Canonical
-          hole (invalid) 0xFFFF800000000000 - 0xFFFFFFFFFFFFFFFF Kernel space
-          (higher half) │ ├─ 0xFFFF800000000000 - 0xFFFF800000000000+1GB │
-          (Identity mapping / bootloader region) │ ├─ 0xFFFF800000100000 -
-          0xFFFF800007FFFFFF │ (Kernel code and data) │ └─ 0xFFFF800008000000 -
-          Higher addresses (Kernel heap, page tables, kernel stack)
-        </div>
+typedef struct {
+    pte_t entries[512];                // 512 entries per table
+} __attribute__((aligned(4096))) page_table_t;
 
-        <h2>TLB (Translation Lookaside Buffer)</h2>
-        <p>
-          The TLB is CPU cache of recent translations. After modifying page
-          tables, we must flush relevant entries:
-        </p>
+// PML4 (top level)
+extern page_table_t* pml4;
 
-        <pre><code>// Flush single TLB entry
+// Functions
+void vmm_init(void);
+void vmm_map_page(uint64_t virt, uint64_t phys, uint16_t flags);
+pte_t* vmm_get_pte(uint64_t virt);
+void vmm_unmap_page(uint64_t virt);
+void vmm_switch_page_table(page_table_t* table);</code></pre><h3>Virtual Address to Page Table Walk</h3><pre><code class="language-c">// Get the page table entry for a virtual address
+pte_t* vmm_get_pte(uint64_t virt) {
+    // Extract indices from virtual address
+    uint16_t pml4_idx = (virt &gt;&gt; 39) &amp; 0x1FF;
+    uint16_t pdpt_idx = (virt &gt;&gt; 30) &amp; 0x1FF;
+    uint16_t pd_idx   = (virt &gt;&gt; 21) &amp; 0x1FF;
+    uint16_t pt_idx   = (virt &gt;&gt; 12) &amp; 0x1FF;
+
+    // Get PML4 entry
+    pte_t pml4e = pml4-&gt;entries[pml4_idx];
+    if (!(pml4e &amp; PAGE_PRESENT)) {
+        return NULL;  // PDPT not present
+    }
+
+    // Get PDPT entry
+    page_table_t* pdpt = (page_table_t*)(pml4e &amp; ~0xFFF);
+    pte_t pdpte = pdpt-&gt;entries[pdpt_idx];
+    if (!(pdpte &amp; PAGE_PRESENT)) {
+        return NULL;  // PD not present
+    }
+
+    // Get PD entry
+    page_table_t* pd = (page_table_t*)(pdpte &amp; ~0xFFF);
+    pte_t pde = pd-&gt;entries[pd_idx];
+    if (!(pde &amp; PAGE_PRESENT)) {
+        return NULL;  // PT not present
+    }
+
+    // Get PT entry
+    page_table_t* pt = (page_table_t*)(pde &amp; ~0xFFF);
+    return &amp;pt-&gt;entries[pt_idx];
+}</code></pre><h3>Mapping a Page</h3><pre><code class="language-c">void vmm_map_page(uint64_t virt, uint64_t phys, uint16_t flags) {
+    uint16_t pml4_idx = (virt &gt;&gt; 39) &amp; 0x1FF;
+    uint16_t pdpt_idx = (virt &gt;&gt; 30) &amp; 0x1FF;
+    uint16_t pd_idx   = (virt &gt;&gt; 21) &amp; 0x1FF;
+    uint16_t pt_idx   = (virt &gt;&gt; 12) &amp; 0x1FF;
+
+    // Get or create PDPT
+    pte_t pml4e = pml4-&gt;entries[pml4_idx];
+    page_table_t* pdpt;
+    if (!(pml4e &amp; PAGE_PRESENT)) {
+        pdpt = (page_table_t*)pmm_alloc_page();
+        memset(pdpt, 0, 4096);
+        pml4-&gt;entries[pml4_idx] = (uint64_t)pdpt | flags;
+    } else {
+        pdpt = (page_table_t*)(pml4e &amp; ~0xFFF);
+    }
+
+    // Get or create PD
+    pte_t pdpte = pdpt-&gt;entries[pdpt_idx];
+    page_table_t* pd;
+    if (!(pdpte &amp; PAGE_PRESENT)) {
+        pd = (page_table_t*)pmm_alloc_page();
+        memset(pd, 0, 4096);
+        pdpt-&gt;entries[pdpt_idx] = (uint64_t)pd | flags;
+    } else {
+        pd = (page_table_t*)(pdpte &amp; ~0xFFF);
+    }
+
+    // Get or create PT
+    pte_t pde = pd-&gt;entries[pd_idx];
+    page_table_t* pt;
+    if (!(pde &amp; PAGE_PRESENT)) {
+        pt = (page_table_t*)pmm_alloc_page();
+        memset(pt, 0, 4096);
+        pd-&gt;entries[pd_idx] = (uint64_t)pt | flags;
+    } else {
+        pt = (page_table_t*)(pde &amp; ~0xFFF);
+    }
+
+    // Set the final page entry
+    pt-&gt;entries[pt_idx] = phys | flags;
+
+    // Invalidate TLB entry for this address
+    asm volatile (&quot;invlpg (%0)&quot; ::&quot;r&quot;(virt) : &quot;memory&quot;);
+}</code></pre><p>---</p><h2>Kernel Memory Layout</h2><p>AOS maps memory as:</p><pre><code>Virtual Address Space:
+
+0x0000000000000000 - 0x00007FFFFFFFFFFF    User space (optional)
+0x0000800000000000 - 0xFFFF7FFFFFFFFFFF    Canonical hole (invalid)
+0xFFFF800000000000 - 0xFFFFFFFFFFFFFFFF    Kernel space (higher half)
+   │
+   ├─ 0xFFFF800000000000 - 0xFFFF800000000000+1GB
+   │  │ (Identity mapping - contains bootloader and first MB)
+   │  │
+   ├─ 0xFFFF800000100000 - 0xFFFF800007FFFFFF
+   │  │ (Kernel code and data)
+   │  │
+   └─ 0xFFFF800008000000 - Higher addresses
+      (Available for kernel heap, page tables, kernel stack, etc.)</code></pre><p>---</p><h2>Initialization</h2><h3>Step 1: Allocate PML4</h3><pre><code class="language-c">void vmm_init(void) {
+    // Allocate PML4 (top-level page table)
+    pml4 = (page_table_t*)pmm_alloc_page();
+    memset(pml4, 0, 4096);
+
+    // ... rest of initialization
+}</code></pre><h3>Step 2: Map Bootloader Region</h3><p>The bootloader places the kernel at physical address 0x100000 (1MB). We need identity mapping (virtual = physical) for this region until paging is active.</p><pre><code class="language-c">// Identity map kernel region
+for (uint64_t addr = 0; addr &lt; 0x1000000; addr += 0x1000) {
+    vmm_map_page(addr, addr, PAGE_KERNEL);
+}</code></pre><h3>Step 3: Map Kernel to High Address</h3><p>Map kernel code to the higher-half:</p><pre><code class="language-c">// Map 1GB of kernel space
+for (uint64_t i = 0; i &lt; 0x40000000; i += 0x1000) {
+    uint64_t virt = 0xFFFF800000000000 + i;
+    uint64_t phys = i;
+    vmm_map_page(virt, phys, PAGE_KERNEL);
+}</code></pre><h3>Step 4: Load PML4 and Enable Paging</h3><pre><code class="language-nasm">; From loader.s
+    mov rax, pml4           ; PML4 physical address
+    mov cr3, rax            ; Load page directory
+
+    ; Enable paging
+    mov rax, cr0
+    or  rax, 0x80000000     ; Set PG bit
+    mov cr0, rax</code></pre><p>---</p><h2>Large Pages (2MB/1GB)</h2><p>Instead of mapping individual 4KB pages, we can use larger pages:</p><ul><li><strong>2MB pages</strong>: Skip page table level, saves memory</li><li><strong>1GB pages</strong>: Skip page directory too, saves more memory</li></ul><h3>2MB Page Mapping</h3><pre><code class="language-c">void vmm_map_2mb_page(uint64_t virt, uint64_t phys, uint16_t flags) {
+    uint16_t pml4_idx = (virt &gt;&gt; 39) &amp; 0x1FF;
+    uint16_t pdpt_idx = (virt &gt;&gt; 30) &amp; 0x1FF;
+    uint16_t pd_idx   = (virt &gt;&gt; 21) &amp; 0x1FF;
+
+    // ... get/create PML4 and PDPT ...
+
+    // Set PD entry directly to physical address
+    // with PAGE_SIZE bit (bit 7) to indicate 2MB page
+    pde = phys | flags | 0x80;  // 0x80 = PS (Page Size) bit
+    pd-&gt;entries[pd_idx] = pde;
+}</code></pre><p>---</p><h2>TLB (Translation Lookaside Buffer)</h2><p>The TLB is CPU cache of recent translations. After modifying page tables, we must flush relevant entries:</p><pre><code class="language-c">// Flush single TLB entry
 static inline void tlb_flush_entry(uint64_t virt) {
-    asm volatile("invlpg (%0)" ::"r"(virt) : "memory");
+    asm volatile(&quot;invlpg (%0)&quot; ::&quot;r&quot;(virt) : &quot;memory&quot;);
 }
 
 // Flush entire TLB
 static inline void tlb_flush_all(void) {
     uint64_t cr3;
-    asm volatile("mov %%cr3, %0" : "=r"(cr3));
-    asm volatile("mov %0, %%cr3" ::"r"(cr3));
-}</code></pre>
+    asm volatile(&quot;mov %%cr3, %0&quot; : &quot;=r&quot;(cr3));
+    asm volatile(&quot;mov %0, %%cr3&quot; ::&quot;r&quot;(cr3));
+}
 
-        <h2>Key Features</h2>
+// INVLPG is better for single pages, TLB flush all for many changes</code></pre><p>---</p><h2>Memory Protection</h2><p>Page table entries control access:</p><pre><code class="language-c">// Read-only page (code segment)
+vmm_map_page(code_addr, phys, PAGE_PRESENT);
 
-        <div class="box">
-          <ul>
-            <li>✓ 4-level paging translates 48-bit virtual to physical</li>
-            <li>✓ 4KB pages are standard; 2MB/1GB pages save memory</li>
-            <li>✓ Higher-half kernel separates kernel from user space</li>
-            <li>✓ TLB invalidation needed after page table changes</li>
-            <li>✓ Page flags control access (read/write/execute)</li>
-            <li>✓ Supports demand paging and lazy allocation</li>
-          </ul>
-        </div>
+// Readable and writable (data segment)
+vmm_map_page(data_addr, phys, PAGE_PRESENT | PAGE_WRITE);
 
-        <div class="related-docs">
-          <h3>Related Components</h3>
-          <ul>
-            <li><a href="pmm.html">Physical Memory Manager (PMM)</a></li>
-            <li><a href="kmalloc.html">Kernel Memory Allocator</a></li>
-            <li>
-              <a href="../interrupt_io/idt.html">IDT Exception Handling</a>
-            </li>
-            <li>
-              <a href="../core_systems/kernel_init.html"
-                >Kernel Initialization</a
-              >
-            </li>
-          </ul>
-        </div>
-      </div>
-    </div>
+// User-accessible page
+vmm_map_page(user_addr, phys, PAGE_PRESENT | PAGE_WRITE | PAGE_USER);
 
-    <footer>
-      <p><strong>AOS - Technical Documentation</strong></p>
-      <p>
-        Source Files: <code>include/vmm.h</code> | <code>src/mm/vmm.c</code> |
-        <code>src/arch/x86_64/asm/vmm_asm.s</code>
-      </p>
-    </footer>
-  </body>
+// No-execute page
+vmm_map_page(data2_addr, phys, PAGE_PRESENT | PAGE_WRITE | PAGE_NX);</code></pre><p>---</p><h2>Page Faults</h2><p>When the CPU accesses a virtual address and the page is not present, a page fault exception (#14) occurs.</p><p>Common causes and responses:</p><p>| Cause                | Response                                    | | -------------------- | ------------------------------------------- | | Page not mapped      | Map it (if lazy allocation) or kill process | | Page swapped to disk | Load from disk (not in AOS yet)          | | Access violation     | Kill process                                | | Stack overflow       | Allocate more stack pages                   |</p><p>---</p><h2>Common Patterns</h2><h3>Map Range of Pages</h3><pre><code class="language-c">void vmm_map_range(uint64_t virt_start, uint64_t phys_start,
+                   uint64_t size, uint16_t flags) {
+    for (uint64_t i = 0; i &lt; size; i += 0x1000) {
+        vmm_map_page(virt_start + i, phys_start + i, flags);
+    }
+}
+
+// Usage: Map 64MB of video memory
+vmm_map_range(VRAM_VIRT_START, VRAM_PHYS_START, 64*1024*1024,
+              PAGE_KERNEL | PAGE_NOCACHE);</code></pre><h3>Get Physical Address from Virtual</h3><pre><code class="language-c">uint64_t vmm_get_physical(uint64_t virt) {
+    pte_t* pte = vmm_get_pte(virt);
+    if (!pte || !(*pte &amp; PAGE_PRESENT)) {
+        return 0;  // Invalid or not mapped
+    }
+
+    // Extract physical frame number and add offset
+    uint64_t offset = virt &amp; 0xFFF;
+    uint64_t frame = *pte &amp; ~0xFFF;
+    return frame + offset;
+}</code></pre><p>---</p><h2>Key Takeaways</h2><p>✓ 4-level paging translates 48-bit virtual to physical addresses   ✓ 4KB pages are standard; 2MB/1GB pages save memory   ✓ Higher-half kernel separates kernel from user space   ✓ Page table walking requires careful NULL checking   ✓ TLB invalidation needed after page table changes   ✓ Page flags control access (read/write/execute)   ✓ Page faults handled by exception handler</p><p>---</p><h2>Related Components</h2><ul><li><a href="pmm.html">Physical Memory Manager (PMM)</a></li><li><a href="kmalloc.html">Kernel Memory Allocator (Kmalloc)</a></li><li><a href="../interrupt_io/idt.html">IDT Exception Handling</a></li><li><a href="../core_systems/kernel_init.html">Kernel Initialization</a></li></ul><p>---</p><p><strong>Source Files:</strong></p><ul><li><code>include/vmm.h</code> - VMM header</li><li><code>src/mm/vmm.c</code> - Paging implementation</li><li><code>src/arch/x86_64/asm/vmm_asm.s</code> - Assembly routines</li></ul>
+  </main>
+</body>
 </html>

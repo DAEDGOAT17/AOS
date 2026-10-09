@@ -1,11 +1,15 @@
-<!DOCTYPE html>
-<html>
-<head>
-    <!-- Instantly forwards visitors to your blog_docs index page -->
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta http-equiv="refresh" content="0; url=docs/blog_docs/index.html" />
-    <title>Redirecting...</title>
-</head>
-<body>
-    <p>Redirecting... If the page doesn't load, <a href="docs/blog_docs/index.html">click here</a>.</p>
-</body>
+    <title>AOS Documentation</title>
+    <script>
+      window.location.replace(new URL("docs/blog_docs/index.html", window.location.href).href);
+    </script>
+  </head>
+  <body>
+    <p>AOS documentation is loading. <a href="docs/blog_docs/index.html">Open the documentation portal</a>.</p>
+  </body>
 </html>

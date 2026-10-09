@@ -315,6 +315,31 @@
         font-size: 0.9rem;
       }
 
+      .portal-tools {
+        background: white;
+        border-radius: 8px;
+        padding: 1.5rem;
+        margin-bottom: 2rem;
+        box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+      }
+
+      .portal-tools h2 { color: #17383c; margin-bottom: 0.5rem; }
+      .portal-tools label { display: block; font-weight: 600; margin: 0.8rem 0 0.35rem; }
+      .portal-search {
+        width: 100%; min-height: 48px; padding: 0.7rem 0.85rem;
+        border: 1px solid #78908a; border-radius: 4px; background: white;
+        color: #172c30; font: inherit;
+      }
+      .portal-search:focus-visible, .search-result:focus-visible { outline: 3px solid #087f6b; outline-offset: 2px; }
+      .search-meta { margin: 0.5rem 0; color: #4b6264; font-size: 0.92rem; }
+      .search-results { display: grid; gap: 0.5rem; max-height: 420px; overflow: auto; }
+      .search-result { display: block; padding: 0.7rem; border: 1px solid #d0dbd7; border-radius: 4px; color: #163a3e; background: #f5f8f6; text-decoration: none; }
+      .search-result:hover { background: #e5f1ed; border-color: #087f6b; }
+      .search-result strong, .search-result small { display: block; }
+      .search-result small { color: #526568; margin-top: 0.2rem; }
+      .portal-links { display: flex; flex-wrap: wrap; gap: 1rem; margin-top: 0.8rem; }
+      .portal-links a { color: #006c5b; font-weight: 600; }
+
       @media (max-width: 768px) {
         header h1 {
           font-size: 2rem;
@@ -349,35 +374,33 @@
       <div class="intro-section">
         <h2>Welcome to AOS Documentation</h2>
         <p>
-          AOS is a powerful x86_64 monolithic kernel built from scratch
-          for learning OS internals and AI integration. This comprehensive
-          documentation covers every component, from bootloader to network
-          stack, with detailed explanations and code walkthroughs suitable for
-          both learning and production reference.
+          AOS is a from-scratch x86_64 operating-system research prototype. This
+          guide covers boot, memory, drivers, filesystems, the shell, and its
+          bounded AI-assisted agent runtime.
         </p>
         <p>
-          Whether you're a student exploring operating system concepts, a
-          developer implementing kernel features, or someone interested in how
-          modern systems work at the lowest level, you'll find everything you
-          need here.
+          Model inference runs through a local Ollama-compatible host service;
+          AOS owns tool validation, execution, observations, and persistent Lisp
+          tools. Start with the newcomer guide, then follow source links in the
+          generated function glossary.
         </p>
 
         <div class="stats">
           <div class="stat-card">
-            <div class="number">30+</div>
-            <div class="label">Core Modules</div>
+            <div class="number">195</div>
+            <div class="label">Public APIs indexed</div>
           </div>
           <div class="stat-card">
-            <div class="number">15K+</div>
-            <div class="label">Lines of Code</div>
+            <div class="number">379</div>
+            <div class="label">AOS C definitions indexed</div>
           </div>
           <div class="stat-card">
             <div class="number">2</div>
             <div class="label">Boot Methods</div>
           </div>
           <div class="stat-card">
-            <div class="number">100%</div>
-            <div class="label">Open Source</div>
+            <div class="number">1</div>
+            <div class="label">Searchable glossary</div>
           </div>
         </div>
 
@@ -437,12 +460,26 @@
           <div class="feature-item">
             <div class="feature-icon">🤖</div>
             <div class="feature-text">
-              <h4>AI Foundation</h4>
-              <p>Tokenization and LLM inference support</p>
+              <h4>AI-Assisted Runtime</h4>
+              <p>OS-owned tool policy, observation loop, and persistent Lisp apps</p>
             </div>
           </div>
         </div>
       </div>
+
+      <section class="portal-tools" aria-labelledby="search-title">
+        <h2 id="search-title">Find a guide or function</h2>
+        <label for="doc-search">Search concepts, symbols, or source files</label>
+        <input id="doc-search" class="portal-search" type="search" autocomplete="off" placeholder="Try fat32_open, scheduler, agent task, boot" />
+        <p id="search-meta" class="search-meta" aria-live="polite">Loading search index…</p>
+        <div id="search-results" class="search-results" role="list"></div>
+        <div class="portal-links">
+          <a href="START_HERE.html">Start Here</a>
+          <a href="FUNCTION_GLOSSARY.html">Function Glossary</a>
+          <a href="../genera_pitch/PITCH_BRIEF.html">Research Brief</a>
+          <a href="README.html">Docs Map</a>
+        </div>
+      </section>
 
       <!-- Documentation Grid -->
       <h2
@@ -472,7 +509,7 @@
               <a href="architecture/gdt.html">Global Descriptor Table (GDT)</a>
               <a href="interrupt_io/idt.html">Interrupt Descriptor Table</a>
               <a href="architecture/bootloader.html">Bootloader & Multiboot</a>
-              <a href="">Long Mode Transition</a>
+              <a href="architecture/bootloader.html">Long Mode Transition</a>
             </div>
           </div>
         </div>
@@ -512,7 +549,7 @@
               <a href="interrupt_io/idt.html">Interrupt Handling</a>
               <a href="interrupt_io/apic.html">APIC/IO-APIC Controller</a>
               <a href="interrupt_io/timer.html">Timer Subsystem</a>
-              <a href="">I/O Port Access</a>
+              <a href="FUNCTION_GLOSSARY.html#fn-inb">I/O Port Access API</a>
             </div>
           </div>
         </div>
@@ -585,7 +622,7 @@
           </div>
           <div class="doc-card-content">
             <p>
-              Discover the embedded lwIP TCP/IP stack and network interface
+              Discover the integrated lwIP TCP/IP stack and network interface
               drivers.
             </p>
             <div class="doc-links">
@@ -607,8 +644,9 @@
 
         <div class="path-grid">
           <div class="path-card">
-            <h4>🌱 Beginner Path (3 weeks)</h4>
+            <h4>🌱 Beginner Path</h4>
             <ol>
+              <li><a href="START_HERE.html">Start Here and repository map</a></li>
               <li>Bootloader & Multiboot</li>
               <li>Global Descriptor Table (GDT)</li>
               <li>Physical Memory Basics</li>
@@ -619,7 +657,7 @@
           </div>
 
           <div class="path-card">
-            <h4>📈 Intermediate Path (4 weeks)</h4>
+            <h4>📈 Intermediate Path</h4>
             <ol>
               <li>Deep Virtual Memory</li>
               <li>APIC Routing</li>
@@ -631,7 +669,7 @@
           </div>
 
           <div class="path-card">
-            <h4>⚡ Advanced Path (6+ weeks)</h4>
+            <h4>⚡ Advanced Path</h4>
             <ol>
               <li>Kernel Allocator</li>
               <li>lwIP Network Stack</li>
@@ -660,9 +698,37 @@
     <footer>
       <p><strong>AOS - Technical Documentation</strong></p>
       <p>A modern 64-bit educational kernel | Open Source | April 2026</p>
-      <p style="margin-top: 1rem; opacity: 0.7">
-        Built with passion for OS education and development
-      </p>
+      <p style="margin-top: 1rem; opacity: 0.7">Search data is generated from AOS documentation and source headers.</p>
     </footer>
+    <script src="search-index.js"></script>
+    <script>
+      (() => {
+        const input = document.querySelector("#doc-search");
+        const results = document.querySelector("#search-results");
+        const meta = document.querySelector("#search-meta");
+        const index = window.AOS_DOC_SEARCH || [];
+        const normalize = (value) => value.toLowerCase().replace(/[^a-z0-9_./-]+/g, " ").trim();
+        function search() {
+          const terms = normalize(input.value).split(/\s+/).filter(Boolean);
+          results.replaceChildren();
+          if (!terms.length) { meta.textContent = `${index.length} searchable entries. Type to search.`; return; }
+          const matches = index.map((item) => {
+            const title = normalize(item.title), body = normalize(`${item.text} ${item.kind}`);
+            const score = terms.reduce((sum, term) => !title.includes(term) && !body.includes(term) ? -1000 : sum + (title === term ? 12 : title.startsWith(term) ? 6 : title.includes(term) ? 4 : 1), 0);
+            return { item, score };
+          }).filter((match) => match.score >= 0).sort((a, b) => b.score - a.score || a.item.title.localeCompare(b.item.title)).slice(0, 30);
+          meta.textContent = matches.length ? `${matches.length}${matches.length === 30 ? "+" : ""} results` : "No matches. Try a shorter query.";
+          for (const { item } of matches) {
+            const link = document.createElement("a"); link.className = "search-result"; link.href = item.href; link.setAttribute("role", "listitem");
+            const title = document.createElement("strong"); title.textContent = item.title;
+            const detail = document.createElement("small"); detail.textContent = `${item.kind} · ${item.text.slice(0, 180)}`;
+            link.append(title, detail); results.append(link);
+          }
+        }
+        input.addEventListener("input", search);
+        input.addEventListener("keydown", (event) => { if (event.key === "Enter") results.querySelector("a")?.focus(); if (event.key === "Escape") { input.value = ""; search(); } });
+        search();
+      })();
+    </script>
   </body>
 </html>

@@ -434,10 +434,10 @@ uint64_t vmm_get_physical(uint64_t virt) {
 
 ## Related Components
 
-- [Physical Memory Manager (PMM)](pmm.md)
-- [Kernel Memory Allocator (Kmalloc)](kmalloc.md)
-- [IDT Exception Handling](../interrupt_io/idt.md)
-- [Kernel Initialization](../core_systems/kernel_init.md)
+- [Physical Memory Manager (PMM)](pmm.html)
+- [Kernel Memory Allocator (Kmalloc)](kmalloc.html)
+- [IDT Exception Handling](../interrupt_io/idt.html)
+- [Kernel Initialization](../core_systems/kernel_init.html)
 
 ---
 

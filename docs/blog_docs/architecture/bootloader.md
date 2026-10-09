@@ -353,10 +353,10 @@ void process_multiboot_info(multiboot_info_t* info) {
 
 ## Related Components
 
-- [Long Mode Transition](long_mode.md)
-- [Physical Memory Manager](../memory/pmm.md)
-- [Screen/VGA Driver](../drivers/screen_driver.md)
-- [Kernel Initialization](../core_systems/kernel_init.md)
+- [Long Mode Transition](long_mode.html)
+- [Physical Memory Manager](../memory/pmm.html)
+- [Screen/VGA Driver](../drivers/screen_driver.html)
+- [Kernel Initialization](../core_systems/kernel_init.html)
 
 ---
 

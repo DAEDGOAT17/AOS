@@ -1,4 +1,5 @@
 #include "core/lisp.h"
+#include "core/jit_engine.h"
 #include "ata.h"
 #include "fat32.h"
 #include "kmalloc.h"
@@ -17,6 +18,7 @@
 #define LISP_TEXT_SIZE 256U
 #define LISP_CANVAS_WIDTH 60U
 #define LISP_CANVAS_HEIGHT 20U
+#define LISP_MAX_TOOL_DEPTH 4U
 
 enum {
     LISP_NIL,
@@ -64,7 +66,10 @@ typedef struct {
 static char lisp_canvas[LISP_CANVAS_HEIGHT][LISP_CANVAS_WIDTH];
 static uint32_t lisp_canvas_width;
 static uint32_t lisp_canvas_height;
+static uint32_t lisp_tool_depth;
 extern char kbd_get(void);
+static int lisp_run(const char* source, const char* argument, int print_result);
+static int lisp_run_saved_tool(const char* name);
 
 static void lisp_skip_space(lisp_parser_t* parser) {
     while (*parser->cursor == ' ' || *parser->cursor == '\t' ||
@@ -222,7 +227,8 @@ static int lisp_is_operator(const char* name) {
     static const char* operators[] = {
         "begin", "if", "print", "concat", "+", "-", "*", "=", "!=", "<", ">", "<=", ">=",
         "mod", "not", "and", "or", "let", "var", "set!", "while", "key", "wait",
-        "canvas", "cell", "draw", "uptime", "diskinfo", NULL
+        "canvas", "cell", "draw", "uptime", "diskinfo", "memory-get", "memory-set",
+        "tool-read", "tool-save", "tool-run", "kernel-stub", NULL
     };
     for (uint32_t index = 0; operators[index]; index++) {
         if (strcmp(name, operators[index]) == 0) return 1;
@@ -268,6 +274,10 @@ static int lisp_validate_node(const lisp_parser_t* parser, int index) {
         ((strcmp(operator_name, "+") == 0 || strcmp(operator_name, "*") == 0) && (count < 2 || count > LISP_MAX_ARGUMENTS)) ||
         (strcmp(operator_name, "-") == 0 && (count == 0 || count > 2)) ||
         ((strcmp(operator_name, "uptime") == 0 || strcmp(operator_name, "diskinfo") == 0) && count != 0) ||
+                ((strcmp(operator_name, "memory-get") == 0 || strcmp(operator_name, "tool-read") == 0 ||
+                    strcmp(operator_name, "tool-run") == 0) && count != 1) ||
+                ((strcmp(operator_name, "memory-set") == 0 || strcmp(operator_name, "tool-save") == 0) && count != 2) ||
+                (strcmp(operator_name, "kernel-stub") == 0 && count != 1) ||
         (strcmp(operator_name, "key") == 0 && count > 1)) return 0;
 
     if (strcmp(operator_name, "let") == 0 || strcmp(operator_name, "var") == 0 || strcmp(operator_name, "set!") == 0) {
@@ -357,6 +367,99 @@ static int lisp_value_truthy(const lisp_value_t* value) {
     if (value->type == LISP_INTEGER) return value->integer != 0;
     if (value->type == LISP_STRING) return value->text[0] != '\0';
     return 0;
+}
+
+static int lisp_storage_name_valid(const char* name) {
+    uint32_t length;
+    if (!name) return 0;
+    length = strlen(name);
+    if (length == 0 || length > 8) return 0;
+    for (uint32_t index = 0; index < length; index++) {
+        char value = name[index];
+        if (!((value >= 'a' && value <= 'z') || (value >= 'A' && value <= 'Z') ||
+              (value >= '0' && value <= '9') || value == '_' || value == '-')) return 0;
+    }
+    return 1;
+}
+
+static int lisp_storage_path(char* path, uint32_t capacity, const char* directory,
+                             const char* name, const char* extension) {
+    uint32_t directory_length = strlen(directory);
+    uint32_t name_length = strlen(name);
+    uint32_t extension_length = strlen(extension);
+    if (!path || !lisp_storage_name_valid(name) ||
+        directory_length + name_length + extension_length + 1 > capacity) return 0;
+    memcpy(path, directory, directory_length);
+    memcpy(path + directory_length, name, name_length);
+    memcpy(path + directory_length + name_length, extension, extension_length);
+    path[directory_length + name_length + extension_length] = '\0';
+    return 1;
+}
+
+static int lisp_storage_read(const char* path, char* output, uint32_t capacity,
+                             int allow_missing) {
+    int fd = fat32_open(path, 'r');
+    if (fd < 0) {
+        if (allow_missing) output[0] = '\0';
+        return allow_missing;
+    }
+
+    uint32_t size = fat32_get_size(fd);
+    if (size >= capacity) {
+        fat32_close(fd);
+        return 0;
+    }
+    uint32_t total = 0;
+    while (total < size) {
+        int bytes = fat32_read(fd, output + total, size - total);
+        if (bytes <= 0) {
+            fat32_close(fd);
+            return 0;
+        }
+        total += (uint32_t)bytes;
+    }
+    fat32_close(fd);
+    output[total] = '\0';
+    return 1;
+}
+
+static int lisp_storage_write(const char* path, const char* value) {
+    uint32_t length = strlen(value);
+    int fd;
+    fat32_mkdir("/agent");
+    if (strncmp(path, "/agent/db/", 10) == 0) fat32_mkdir("/agent/db");
+    else if (strncmp(path, "/agent/lisp/", 12) == 0) fat32_mkdir("/agent/lisp");
+    else return 0;
+
+    fd = fat32_open(path, 'w');
+    if (fd < 0) return 0;
+    int bytes = fat32_write(fd, value, length);
+    fat32_close(fd);
+    if (bytes != (int)length) return 0;
+    return ata_is_ramdisk() || ata_flush_cache() == 0;
+}
+
+static int lisp_kernel_stub_source_allowed(const char* source) {
+    static const char* forbidden_symbols[] = {
+        "serial_write_string", "aos_apply_network_setup", "shell_install_runtime_command",
+        "kmalloc", "kfree", "vmm_map_page", "vmm_alloc_exec_pages", "inb", "outb", NULL
+    };
+    const char* print_call;
+    const char* install_call;
+
+    if (!source || strlen(source) >= LISP_TEXT_SIZE ||
+        !strstr(source, "int driver_init(void)") || !strstr(source, "return")) return 0;
+
+    print_call = strstr(source, "print_string(");
+    install_call = strstr(source, "shell_install_lisp_command(");
+    if ((!print_call && !install_call) || (print_call && install_call)) return 0;
+    if ((print_call && strstr(print_call + 1, "print_string(")) ||
+        (install_call && strstr(install_call + 1, "shell_install_lisp_command("))) return 0;
+
+    for (uint32_t index = 0; forbidden_symbols[index]; index++) {
+        if (strstr(source, forbidden_symbols[index])) return 0;
+    }
+    return 1;
 }
 
 static int lisp_eval_node(lisp_eval_context_t* context, int index, lisp_value_t* result) {
@@ -574,6 +677,58 @@ static int lisp_eval_node(lisp_eval_context_t* context, int index, lisp_value_t*
         result->integer = (int32_t)ata_get_sector_count();
         return 1;
     }
+    if (strcmp(operator_name, "memory-get") == 0 ||
+        strcmp(operator_name, "memory-set") == 0 ||
+        strcmp(operator_name, "tool-read") == 0 ||
+        strcmp(operator_name, "tool-save") == 0 ||
+        strcmp(operator_name, "tool-run") == 0) {
+        lisp_value_t name;
+        char path[64];
+        int source_node = parser->nodes[first].next;
+        if (!lisp_eval_node(context, first, &name) || name.type != LISP_STRING) return 0;
+
+        if (strcmp(operator_name, "memory-set") == 0 || strcmp(operator_name, "tool-save") == 0) {
+            lisp_value_t value;
+            const char* directory = strcmp(operator_name, "memory-set") == 0 ? "/agent/db/" : "/agent/lisp/";
+            const char* extension = strcmp(operator_name, "memory-set") == 0 ? ".txt" : ".lsp";
+            if (!lisp_eval_node(context, source_node, &value) || value.type != LISP_STRING ||
+                !lisp_storage_path(path, sizeof(path), directory, name.text, extension)) return 0;
+            if (strcmp(operator_name, "tool-save") == 0 && !aos_lisp_validate(value.text)) return 0;
+            result->type = LISP_INTEGER;
+            result->integer = lisp_storage_write(path, value.text);
+            return 1;
+        }
+
+        if (strcmp(operator_name, "memory-get") == 0) {
+            if (!lisp_storage_path(path, sizeof(path), "/agent/db/", name.text, ".txt") ||
+                !lisp_storage_read(path, result->text, sizeof(result->text), 1)) return 0;
+            result->type = LISP_STRING;
+            return 1;
+        }
+        if (strcmp(operator_name, "tool-read") == 0) {
+            if (!lisp_storage_path(path, sizeof(path), "/agent/lisp/", name.text, ".lsp") ||
+                !lisp_storage_read(path, result->text, sizeof(result->text), 1)) return 0;
+            result->type = LISP_STRING;
+            return 1;
+        }
+
+        result->type = LISP_INTEGER;
+        result->integer = lisp_run_saved_tool(name.text) == 0;
+        return 1;
+    }
+    if (strcmp(operator_name, "kernel-stub") == 0) {
+        lisp_value_t source;
+        if (!lisp_eval_node(context, first, &source) || source.type != LISP_STRING) return 0;
+        if (!lisp_kernel_stub_source_allowed(source.text)) {
+            print_string("Kernel stub rejected: only one whitelisted driver_init action is allowed.\n");
+            result->type = LISP_INTEGER;
+            result->integer = 0;
+            return 1;
+        }
+        result->type = LISP_INTEGER;
+        result->integer = jit_compile_and_load(source.text) == 0;
+        return 1;
+    }
 
     lisp_value_t values[LISP_MAX_ARGUMENTS];
     uint32_t count = 0;
@@ -648,6 +803,19 @@ static int lisp_run(const char* source, const char* argument, int print_result) 
     }
     kfree(parser);
     return ok ? 0 : -1;
+}
+
+static int lisp_run_saved_tool(const char* name) {
+    char path[64];
+    char source[LISP_MAX_SOURCE + 1];
+    if (lisp_tool_depth >= LISP_MAX_TOOL_DEPTH ||
+        !lisp_storage_path(path, sizeof(path), "/agent/lisp/", name, ".lsp") ||
+        !lisp_storage_read(path, source, sizeof(source), 0) ||
+        !aos_lisp_validate(source)) return -1;
+    lisp_tool_depth++;
+    int result = lisp_run(source, "", 0);
+    lisp_tool_depth--;
+    return result;
 }
 
 int aos_lisp_execute(const char* source, const char* argument) {

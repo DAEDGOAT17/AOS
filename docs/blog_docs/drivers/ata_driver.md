@@ -384,10 +384,10 @@ AOS uses PIO for simplicity; upgrading to DMA or AHCI would significantly improv
 
 ## Related Components
 
-- [FAT32 Filesystem](../filesystem/fat32.md)
-- [AHCI Driver](ahci_driver.md)
-- [PCI Driver](pci_driver.md)
-- [Kernel I/O Operations](../interrupt_io/io_ports.md)
+- [FAT32 Filesystem](../filesystem/fat32.html)
+- [AHCI Driver](ahci_driver.html)
+- [PCI Driver](pci_driver.html)
+- [Kernel I/O Operations](../interrupt_io/io_ports.html)
 
 ---
 
